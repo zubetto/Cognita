@@ -1,0 +1,57 @@
+<Trigger Property="IsMouseOver" Value="true">
+                            <Setter Property="BorderBrush" TargetName="border" Value="{StaticResource TextBox.MouseOver.Border}"/>
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="true">
+                            <Setter Property="BorderBrush" TargetName="border" Value="{StaticResource TextBox.Focus.Border}"/>
+                        </Trigger>
+
+
+
+<Style.Triggers>
+            <MultiTrigger>
+                <MultiTrigger.Conditions>
+                    <Condition Property="IsInactiveSelectionHighlightEnabled" Value="true"/>
+                    <Condition Property="IsSelectionActive" Value="false"/>
+                </MultiTrigger.Conditions>
+                <Setter Property="SelectionBrush" Value="{DynamicResource {x:Static SystemColors.InactiveSelectionHighlightBrushKey}}"/>
+            </MultiTrigger>
+        </Style.Triggers>
+
+
+
+
+
+<ListBox.Background>
+                <DrawingBrush Viewport="0,0,20,20" TileMode="Tile" Stretch="Uniform" ViewportUnits="Absolute" ViewboxUnits="Absolute" Viewbox="0,0,100,100">
+                    <DrawingBrush.Drawing>
+                        <DrawingGroup>
+                            <GeometryDrawing Brush="{StaticResource TxtParamsBack}">
+                                <GeometryDrawing.Geometry>
+                                    <RectangleGeometry Rect="0,0,100,50" />
+                                </GeometryDrawing.Geometry>
+                            </GeometryDrawing>
+                        </DrawingGroup>
+                    </DrawingBrush.Drawing>
+                </DrawingBrush>
+            </ListBox.Background>
+
+
+
+
+private static void GetPropertyValues(Object obj)
+   {
+      Type t = obj.GetType();
+      Console.WriteLine("Type is: {0}", t.Name);
+      PropertyInfo[] props = t.GetProperties();
+      Console.WriteLine("Properties (N = {0}):", 
+                        props.Length);
+      foreach (var prop in props)
+         if (prop.GetIndexParameters().Length == 0)
+            Console.WriteLine("   {0} ({1}): {2}", prop.Name,
+                              prop.PropertyType.Name,
+                              prop.GetValue(obj));
+         else
+            Console.WriteLine("   {0} ({1}): <Indexed>", prop.Name,
+                              prop.PropertyType.Name);
+
+   }

@@ -1,0 +1,32 @@
+========= friction ~ v ==============================================================
+
+RangeX = rX,
+                        RangeY = rY,
+                        SpecksNumber = 16,
+                        MaxIniSpeed = 5,
+                        MassFactor = 33,
+                        FrictionFactor = 10000,
+                        DragFactor = 0,
+                        BoundsDamping = 0.033,
+                        AttractionFactor = 1,
+                        RepulsionFactor = 10,
+                        TemperatureFactor = 0.85,
+                        MemoryAccess = GravitySpecks.MemoryUsage.GMEM
+
+
+
+
+========== friction ~ v*v
+
+RangeX = rX,
+                        RangeY = rY,
+                        SpecksNumber = 16,
+                        MaxIniSpeed = 5,
+                        MassFactor = 10000,
+                        FrictionFactor = 10000,
+                        DragFactor = 3,
+                        BoundsDamping = 0.033,
+                        AttractionFactor = 0.01,
+                        RepulsionFactor = 0.01,
+                        TemperatureFactor = 0.2,
+                        MemoryAccess = GravitySpecks.MemoryUsage.GMEM
