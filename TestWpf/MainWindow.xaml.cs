@@ -21,7 +21,7 @@
  initialized at creation time of the AdaptiveGrid instance. So, during different manipulations
  with the grid (voxel tessellation or merging), voxels only are changed their properties and
  no voxel instances are created or deleted. The grid can be processed in multithreaded manner.
- The methods with names RefineGrid_GCParallel, RefineGrid_FGParallel and others, represent 
+ The methods with names RefineGrid_CGParallel, RefineGrid_FGParallel and others, represent 
  templates of multithreaded processing and also show how the voxel iterator NextAtLevel works.
 
  This project is intended for testing of two-dimensional AdaptiveGrid instances, for estimation 
