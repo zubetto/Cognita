@@ -33,9 +33,6 @@ The _TestWpf_ has graphical output for visual presentation of the grid and voxel
 were created for the 
 testing of the grid refinement processes and for fun in some ways.  
 
-<iframe src="https://player.vimeo.com/video/263415756?autoplay=1&title=0&byline=0&portrait=0" width="640" height="360" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen></iframe>
-<p><a href="https://vimeo.com/263415756">Adaptive Grid</a> from <a href="https://vimeo.com/user44972382">Alexander Z</a> on <a href="https://vimeo.com">Vimeo</a>.</p>
-
-![Cognita_SolarSpecks_001](Cognita_SolarSpecks_001.png)
-![Cognita_SolarSpecks_002](Cognita_SolarSpecks_002.png)
-![Cognita_SolarSpecks_003](Cognita_SolarSpecks_003.png)
+[![Cognita_SolarSpecks_001](Cognita/Cognita_SolarSpecks_001.png)](https://vimeo.com/263415756)
+![Cognita_SolarSpecks_002](Cognita/Cognita_SolarSpecks_002.png)
+![Cognita_SolarSpecks_003](Cognita/Cognita_SolarSpecks_003.png)
