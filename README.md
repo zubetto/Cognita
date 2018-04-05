@@ -33,6 +33,6 @@ The _TestWpf_ has graphical output for visual presentation of the grid and voxel
 were created for the 
 testing of the grid refinement processes and for fun in some ways.  
 
-![Cognita_SolarSpecks_001](Cognita_SolarSpecks_001.png)
+[![Cognita_SolarSpecks_001](Cognita_SolarSpecks_001.png)](https://vimeo.com/263415756)
 ![Cognita_SolarSpecks_002](Cognita_SolarSpecks_002.png)
 ![Cognita_SolarSpecks_003](Cognita_SolarSpecks_003.png)
