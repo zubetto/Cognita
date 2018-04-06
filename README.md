@@ -37,6 +37,6 @@ testing of the grid refinement processes and for fun in some ways.
 <iframe src="https://player.vimeo.com/video/263415756?autoplay=1&loop=1&title=0&byline=0&portrait=0" width="640" height="360" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen></iframe>
  </div>
 
-![Cognita_SolarSpecks_002](Cognita_SolarSpecks_001.png)
-![Cognita_SolarSpecks_002](Cognita_SolarSpecks_002.png)
-![Cognita_SolarSpecks_003](Cognita_SolarSpecks_003.png)
+![Cognita_SolarSpecks_002](https://raw.githubusercontent.com/zubetto/Cognita/master/Cognita_SolarSpecks_001.png)
+![Cognita_SolarSpecks_002](https://raw.githubusercontent.com/zubetto/Cognita/master/Cognita_SolarSpecks_002.png)
+![Cognita_SolarSpecks_003](https://raw.githubusercontent.com/zubetto/Cognita/master/Cognita_SolarSpecks_003.png)
