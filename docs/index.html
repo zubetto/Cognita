@@ -1,0 +1,92 @@
+
+<!DOCTYPE html>
+<html lang="en-US">
+  <head>
+    <meta charset="UTF-8">
+
+<!-- Begin Jekyll SEO tag v2.4.0 -->
+<title>Cognita | This is the educational project with main purpose is to develop and test the multidimensional adaptive grid which can be used in Reinforcement Learning area. Additional purpose of this project is to learn and try CUDA programming with Alea GPU.</title>
+<meta name="generator" content="Jekyll v3.7.3" />
+<meta property="og:title" content="Cognita" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="This is the educational project with main purpose is to develop and test the multidimensional adaptive grid which can be used in Reinforcement Learning area. Additional purpose of this project is to learn and try CUDA programming with Alea GPU." />
+<meta property="og:description" content="This is the educational project with main purpose is to develop and test the multidimensional adaptive grid which can be used in Reinforcement Learning area. Additional purpose of this project is to learn and try CUDA programming with Alea GPU." />
+<link rel="canonical" href="https://zubetto.github.io/Cognita/" />
+<meta property="og:url" content="https://zubetto.github.io/Cognita/" />
+<meta property="og:site_name" content="Cognita" />
+<script type="application/ld+json">
+{"name":"Cognita","description":"This is the educational project with main purpose is to develop and test the multidimensional adaptive grid which can be used in Reinforcement Learning area. Additional purpose of this project is to learn and try CUDA programming with Alea GPU.","@type":"WebSite","url":"https://zubetto.github.io/Cognita/","headline":"Cognita","@context":"http://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+
+    <meta name="description" content="This is the educational project with main purpose is to develop and test the multidimensional adaptive grid which can be used in Reinforcement Learning area. Additional purpose of this project is to learn and try CUDA programming with Alea GPU."/>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#157878">
+    <link href='https://fonts.googleapis.com/css?family=Open+Sans:400,700' rel='stylesheet' type='text/css'>
+    <link rel="stylesheet" href="https://raw.githubusercontent.com/zubetto/Cognita/master/docs/layout.css">
+  </head>
+  <body>
+    <section class="page-header">
+      <h1 class="project-name">Cognita</h1>
+      <h2 class="project-tagline">This is the educational project with main purpose is to develop and test the multidimensional adaptive grid which can be used in Reinforcement Learning area. Additional purpose of this project is to learn and try CUDA programming with Alea GPU.</h2>
+      
+        <a href="https://github.com/zubetto/Cognita" class="btn">View on GitHub</a>
+      
+      
+    </section>
+
+    <section class="main-content">
+      <h1 id="cognita">Cognita</h1>
+<h3 id="concept">Concept</h3>
+<p>This is the educational project with main purpose is to develop and test the multidimensional adaptive grid which can be used in 
+<a href="https://en.wikipedia.org/wiki/Reinforcement_learning">Reinforcement Learning</a> area. 
+Additional purpose of this project is to learn and try CUDA programming with <a href="http://www.aleagpu.com/release/3_0_4/doc/">Alea GPU</a>.</p>
+
+<p>In typical reinforcement learning scenario an agent takes actions corresponding to current policy and state of an environment.
+Adaptive grid is needed to represent a manifold of possible actions of an agent and manifold of states of an environment with ability to 
+adjust grid resolution in regions of interest. The concept of adaptive refinement of the manifolds of possible states and actions 
+is close to common learning practices (for example, in learning of car driving at a very first stage there is no need for any distinction
+of severity of bends, instead, the only distinction between left and right turns could be suitable. The more experience and average speeds,
+the more details about bends and the more precise steering are needed for further improvement of driving skills)</p>
+
+<h3 id="implementation">Implementation</h3>
+<p>The class <a href="https://github.com/zubetto/Cognita/blob/be324e36a6f88cd0f0c868d00be35bdcfbe5d534/Cognita/AdaptiveGrid.cs#L610"><em>AdaptiveGrid</em></a>
+is implemented as voxel tree. Each voxel exposes its properties and methods through the 
+<a href="https://github.com/zubetto/Cognita/blob/be324e36a6f88cd0f0c868d00be35bdcfbe5d534/Cognita/AdaptiveGrid.cs#L38"><em>IVoxel</em></a> interface. 
+The  maximum number of voxels and shape of the grid are set at creation time of the <em>AdaptiveGrid</em> instance and can’t be changed 
+during the  liftime of the instance. The voxels are stored in the internal single-dimensional array, which entirely initialized at creation 
+time of the <em>AdaptiveGrid</em> instance. So, during different manipulations with the grid (voxel tessellation or merging), 
+voxels only are changed their properties and no voxel instances are created or deleted. The grid can be processed in multithreaded manner. 
+The methods 
+<a href="https://github.com/zubetto/Cognita/blob/be324e36a6f88cd0f0c868d00be35bdcfbe5d534/TestWpf/MainWindow.xaml.cs#L1509"><em>RefineGrid_CGParallel</em></a>, 
+<a href="https://github.com/zubetto/Cognita/blob/be324e36a6f88cd0f0c868d00be35bdcfbe5d534/TestWpf/MainWindow.xaml.cs#L1816"><em>RefineGrid_FGParallel</em></a> 
+and others represent templates of multithreaded processing and also show how the voxel iterator 
+<a href="https://github.com/zubetto/Cognita/blob/be324e36a6f88cd0f0c868d00be35bdcfbe5d534/Cognita/AdaptiveGrid.cs#L1042"><em>NextAtLevel</em></a> works.</p>
+
+<h3 id="tests">Tests</h3>
+<p>The <em>TestWpf</em> project is intended for testing of two-dimensional <code class="highlighter-rouge">AdaptiveGrid&lt;double&gt;</code> instances, for estimation of performance 
+of the grid processing methods and for trying some CUDA programming, which in this case was used for bitmaps calculation. 
+The <em>TestWpf</em> has graphical output for visual presentation of the grid and voxels. Several simple abstract 
+<a href="https://github.com/zubetto/Cognita/blob/017159c9b97a8967549c4e3340b8caf37366ccb7/ModelFunctions/ModelFunctions.cs#L1238">models</a> 
+were created for the 
+testing of the grid refinement processes and for fun in some ways.</p>
+
+<iframe src="https://player.vimeo.com/video/263415756?autoplay=1&title=0&byline=0&portrait=0" width="640" height="360" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen></iframe>
+
+<p><a href="https://vimeo.com/263415756">Adaptive Grid</a> from <a href="https://vimeo.com/user44972382">Alexander Z</a> on <a href="https://vimeo.com">Vimeo</a>.</p>
+
+<img src="https://raw.githubusercontent.com/zubetto/Cognita/master/Cognita_SolarSpecks_001.png" />
+<img src="https://raw.githubusercontent.com/zubetto/Cognita/master/Cognita_SolarSpecks_002.png" />
+<img src="https://raw.githubusercontent.com/zubetto/Cognita/master/Cognita_SolarSpecks_003.png" />
+
+
+      <footer class="site-footer">
+        
+          <span class="site-footer-owner"><a href="https://github.com/zubetto/Cognita">Cognita</a> is maintained by <a href="https://github.com/zubetto">zubetto</a>.</span>
+        
+        <span class="site-footer-credits">This page was generated by <a href="https://pages.github.com">GitHub Pages</a>.</span>
+      </footer>
+    </section>
+
+    
+  </body>
+</html>
