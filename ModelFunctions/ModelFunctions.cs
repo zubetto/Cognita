@@ -2151,7 +2151,7 @@ namespace ModelFunctions
         private double[,] speckVisParams; // k, exp
 
         private const double ClipKink = 0.2;
-        private double A = 1, Ainv = 1;
+        private double A = 1;
         private double massFactor = 1;
         private double attractF = 1;
         private double repulseF = 1;
@@ -2221,7 +2221,7 @@ namespace ModelFunctions
         public double DragFactor { get { return envDamping; } set { if (value >= 0) envDamping = value; } }
         public double BoundsDamping { get { return bndDamping; } set { if (value >= 0) bndDamping = value; } }
         public double MaxStep { get { return dRmax; } set { if (value > 0) dRmax = value; } }
-        public double Amp { get { return A; } set { if (value >= 1) { A = value; Ainv = 1.0 / value; } } }
+        public double Amp { get { return A; } set { if (value >= 1) { A = value; } } }
 
         public int SpecksNumber
         {
@@ -2290,14 +2290,15 @@ namespace ModelFunctions
                 // ini params
                 double k = (85 * rnd.NextDouble() + 15) / range;
                 double exp = 0.85 + 15 / (1 + tempF * v * v);
+                double r = Math.Pow(3, 1.0 / exp) / k;
 
-                speckParams[i] = new double[] { k, exp };
+                speckParams[i] = new double[] { k, exp, r };
 
                 speckVisParams[0, i] = k;
                 speckVisParams[1, i] = exp;
 
                 // define speck inertia
-                speckMass[i] = massFactor * Math.Pow(4, 1.5 / exp) / k;
+                speckMass[i] = massFactor * r * r;
             }
         }
 
@@ -2648,7 +2649,26 @@ namespace ModelFunctions
                         dRy /= dR;
 
                         // calc mutual Gravity impact
-                        double g = attractF / (Ainv + dR2);
+                        double g;
+
+                        if (dR < speckParams[n1][2])
+                        {
+                            double r1 = speckParams[n1][2];
+                            r1 *= r1 * r1;
+
+                            g = dR * attractF / r1;
+                        }
+                        else if (dR < speckParams[n2][2])
+                        {
+                            double r2 = speckParams[n2][2];
+                            r2 *= r2 * r2;
+
+                            g = dR * attractF / r2;
+                        }
+                        else
+                        {
+                            g = attractF / dR2;
+                        }
                         
                         double gx = dRx * g;
                         double gy = dRy * g;

@@ -21,7 +21,7 @@
  initialized at creation time of the AdaptiveGrid instance. So, during different manipulations
  with the grid (voxel tessellation or merging), voxels only are changed their properties and
  no voxel instances are created or deleted. The grid can be processed in multithreaded manner.
- The methods with names RefineGrid_GCParallel, RefineGrid_FGParallel and others, represent 
+ The methods with names RefineGrid_CGParallel, RefineGrid_FGParallel and others, represent 
  templates of multithreaded processing and also show how the voxel iterator NextAtLevel works.
 
  This project is intended for testing of two-dimensional AdaptiveGrid instances, for estimation 
@@ -1807,7 +1807,7 @@ namespace TestWpf
         /// The next voxel to process, is stored in the variable sharedVoxel, 
         /// which are sequentially accessed by all threads;
         /// During the such sequential access each thread stores the current value of the sharedVoxel 
-        /// in the "local" variable and assigns to the sharedVoxel the next voxel to proces;
+        /// in the "local" variable and assigns to the sharedVoxel the next voxel to process;
         /// As a result, the sharedVoxel traversals all voxels of the grid
         /// </summary>
         /// <param name="threshold"></param>
@@ -2157,7 +2157,13 @@ namespace TestWpf
         }
 
         /// <summary>
-        /// 
+        /// Interleaved fine-grained parallelism;
+        /// Each thread processes the certain number of voxels at current tessellation level 
+        /// (a block of voxels), then skips blocks processed by other threads and proceeds to
+        /// its next block at the same level, and so on while there are any unprocessed voxels
+        /// at the current level;
+        /// Voxels are grouped into such blocks at all tessellation levels 
+        /// which makes this algorithm fine-grained parallel
         /// </summary>
         /// <param name="threshold"></param>
         /// <param name="callback"></param>
@@ -2176,8 +2182,16 @@ namespace TestWpf
             var RelayOUT = new ManualResetEvent(false);
             var RelayComplete = new AutoResetEvent(false);
 
+            // The number of voxels constituting the block at the root level
+            // is choosed empirically
             int blockNum = 9;
+
+            // The number of voxels which should be skipped to define the next
+            // block to process
             int stride = blockNum * (TPSvoxels.ThreadsNum - 1);
+
+            // The number of voxels constituting the block at all other levels
+            // should be multiple of the grid tessMultp parameter
             int blockDim = blockNum * tessMultp;
 
             bool notFull = true;
@@ -2190,8 +2204,9 @@ namespace TestWpf
                 ThreadPool.QueueUserWorkItem(new WaitCallback((o) =>
                 {
                     int threadInd = (int)o;
-                    int startSkip = blockNum * threadInd;
-                    startSkip--;
+                    int startSkipRoot = blockNum * threadInd;
+                    int startSkipLevel = startSkipRoot - 1; // -1 because count is started from the ancestor of startVoxel
+                    int startSkip = startSkipRoot;
 
                     // --- Merger-pass ------------------------------
                     int level = 0;
@@ -2205,7 +2220,8 @@ namespace TestWpf
 
                         if (threadInd > 0)
                         {
-                            if (!adaptiveGrid.SkipNextAtLevel(startSkip, ref voxel)) go = false;
+                            if (!adaptiveGrid.SkipNextAtLevel(startSkip, ref voxel))
+                                go = false;
                         }
 
                         // traversal all voxels at the current level
@@ -2231,6 +2247,7 @@ namespace TestWpf
                             }
                         }
 
+                        startSkip = startSkipLevel;
                         stop = blockDim;
 
                         // --- sync-point: next level ---
@@ -2277,6 +2294,7 @@ namespace TestWpf
 
                     // --- Tessellation-pass-----------------------------------------------------
                     level = 0;
+                    startSkip = startSkipRoot;
                     stop = blockNum;
 
                     // level-loop
@@ -2287,7 +2305,8 @@ namespace TestWpf
 
                         if (threadInd > 0)
                         {
-                            if (!adaptiveGrid.SkipNextAtLevel(startSkip, ref voxel)) go = false;
+                            if (!adaptiveGrid.SkipNextAtLevel(startSkip, ref voxel))
+                                go = false;
                         }
 
                         // traversal all voxels at the current level
@@ -2313,6 +2332,7 @@ namespace TestWpf
                             }
                         }
 
+                        startSkip = startSkipLevel;
                         stop = blockDim;
 
                         // --- sync-point: next level ---
@@ -2605,7 +2625,6 @@ namespace TestWpf
             if (start)
             {
                 ResetAvg();
-                SFGParallelUniformity = false;
 
                 frameTimer.Restart();
                 CompositionTarget.Rendering += UpdateFrame;

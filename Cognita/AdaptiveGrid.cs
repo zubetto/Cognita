@@ -1085,17 +1085,20 @@ namespace Cognita
         }
 
         /// <summary>
-        /// 
+        /// Traverses currV parameter over the voxels located at the same level;
+        /// If there are not enough voxels to accomplish the stride
+        /// the method returns false;
         /// </summary>
-        /// <param name="stride"></param>
-        /// <param name="currV"></param>
+        /// <param name="stride">At the root level it defines the number of root voxels to skip;
+        /// At all other levels it defines the number of parent voxel (located one level above 
+        /// of the currV level) which should be skipped</param>
+        /// <param name="currV">Current voxel, will be set to the next voxel at the same level</param>
         /// <returns></returns>
         public bool SkipNextAtLevel(int stride, ref IVoxel currV)
         {
             if (currV.TessLevel == 0)
             {
                 int serial = currV.SerialIndex + stride;
-                stride++;
 
                 if (serial >= rootNum) return false;
 
