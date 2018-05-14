@@ -42,7 +42,9 @@
   <ItemGroup>
     <Compile Include="AdaptiveGrid.cs" />
     <Compile Include="IEnvironment.cs" />
+    <Compile Include="MathX.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="RBFVoxelizer.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

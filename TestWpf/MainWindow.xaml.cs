@@ -204,8 +204,8 @@ namespace TestWpf
         private byte[] gridPixelArray;
         private byte[] modelPixelArray;
         private int rowStride;
-        private double[] placementTmp = new double[4];
-        private double[] vectorTmp = new double[2];
+        private double[] placementTmp = new double[4]; // { pointX, pointY, stepX, stepY }
+        private double[] vectorTmp = new double[2]; // { pointX, pointY }
 
         private byte[] pixelTmp1;
         private byte[] pixelTmp2;
@@ -536,8 +536,8 @@ namespace TestWpf
             // Set matrix
             if (fit)
             {
-                ModelToCanvas.M11 = _pW / (Model.RangeX - Model.Xo);
-                ModelToCanvas.M22 = -_pH / (Model.RangeY - Model.Yo);
+                ModelToCanvas.M11 = _pW / Model.RangeX;
+                ModelToCanvas.M22 = -_pH / Model.RangeY;
             }
             else
             {
@@ -551,7 +551,7 @@ namespace TestWpf
             // Set inverse transform
             CanvasToModel.M11 = 1 / ModelToCanvas.M11;
             CanvasToModel.M22 = 1 / ModelToCanvas.M22;
-            CanvasToModel.OffsetX = -ModelToCanvas.OffsetX;
+            CanvasToModel.OffsetX = -ModelToCanvas.OffsetX / ModelToCanvas.M11;
             CanvasToModel.OffsetY = -ModelToCanvas.OffsetY / ModelToCanvas.M22;
         }
 
@@ -587,27 +587,29 @@ namespace TestWpf
 
         private static void PlacementToCanvas(double[] placement)
         {
+            // point transformation
             placement[0] *= ModelToCanvas.M11;
             placement[0] += ModelToCanvas.OffsetX;
 
             placement[1] *= ModelToCanvas.M22;
             placement[1] += ModelToCanvas.OffsetY;
 
+            // step transformation
             placement[2] *= ModelToCanvas.M11;
             placement[3] *= -ModelToCanvas.M22;
         }
 
         private static void PointToModel(ref Point point)
         {
-            point.X = point.X / ModelToCanvas.M11 - ModelToCanvas.OffsetX;
+            point.X = (point.X - ModelToCanvas.OffsetX) / ModelToCanvas.M11;
 
             point.Y = (point.Y - ModelToCanvas.OffsetY) / ModelToCanvas.M22;
         }
 
         private static void PointToModel(double[] point)
         {
-            point[0] /= ModelToCanvas.M11;
             point[0] -= ModelToCanvas.OffsetX;
+            point[0] /= ModelToCanvas.M11;
 
             point[1] -= ModelToCanvas.OffsetY;
             point[1] /= ModelToCanvas.M22;
@@ -1171,6 +1173,9 @@ namespace TestWpf
             bool isResolvable = true;
             bool isLevelCached = false;
 
+            SetPixelBgra(pixelTmp1, colorLine);
+            SetPixelBgra(pixelTmp2, colorLimpid);
+
             while (isResolvable && adaptiveGrid.FirstAtLevel(level++, out ivoxel))
             {
                 isLevelCached = false;
@@ -1182,10 +1187,7 @@ namespace TestWpf
                 int H = (int)Math.Round(placementTmp[3]);
 
                 if (W < 4 || H < 4) break;
-
-                SetPixelBgra(pixelTmp1, colorLine);
-                SetPixelBgra(pixelTmp2, colorLimpid);
-
+                
                 do
                 {
                     ivoxel.CopyOrigin(placementTmp);
@@ -1202,10 +1204,9 @@ namespace TestWpf
                     int Wclm = (int)Math.Round(placementTmp[0] + placementTmp[2]);
                     int Hrow = (int)Math.Round(placementTmp[1]);
 
-                    W = Wclm - xo;
-                    H = Hrow - yo;
+                    Wclm -= xo;
 
-                    int byteLength = W * BYTESPP;
+                    int byteLength = Wclm * BYTESPP;
 
                     if (ivoxel.ContentSI > 0) // then draw tessellation lines
                     {
@@ -1246,7 +1247,7 @@ namespace TestWpf
                         // build the voxel grid layout formed from the solid and dotted lines
                         for (int i = index0, row = yo; row < Hrow; i += rowStride, row++)
                         {
-                            if (row % notch == 0)
+                            if (row == notch)
                             {
                                 d += vectorTmp[1];
                                 notch = (int)Math.Round(d);
@@ -1256,7 +1257,7 @@ namespace TestWpf
                             else Buffer.BlockCopy(pixelArrTmp2, 0, gridPixelArray, i, byteLength); // draw dotted line
                         }
                     }
-                    else // --- erase tessellation lines ------------------------------------------------
+                    else if (level == 1) // --- erase tessellation lines ------------------------------------------------
                     {
                         // set limpid line buffer
                         for (int i = 0; i < byteLength; i += BYTESPP)
@@ -2692,7 +2693,8 @@ namespace TestWpf
             inputVal[2] = BITMAPWF * ((inputVal[2] + BITMAPWF - 1) / BITMAPWF);
             inputVal[3] = BITMAPHF * ((inputVal[3] + BITMAPHF - 1) / BITMAPHF);
 
-            if (inputVal[2] == rootGridShape[2] && inputVal[3] == rootGridShape[3]) return false;
+            if (inputVal[0] == rootGridShape[0] && inputVal[1] == rootGridShape[1] &&
+                inputVal[2] == rootGridShape[2] && inputVal[3] == rootGridShape[3]) return false;
 
             if (inputVal[2] / inputVal[0] < TILEMIN || inputVal[3] / inputVal[1] < TILEMIN) return false;
 

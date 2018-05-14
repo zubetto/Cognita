@@ -520,7 +520,7 @@ namespace Cognita
 
                 while (i < root.Dimension)
                 {
-                    if (++index[i] < root.Tessellation[i])
+                    if (++index[i] < root.tessFactors[i])
                     {
                         point[i] += root.scaledSteps[nextLev][i];
                         return true;
@@ -560,7 +560,7 @@ namespace Cognita
         private List<int> levelCount; // the number of voxels at levels
         private int totalUsed; // total voxels is used
 
-        private int[] Tessellation; // tessellation edge factors
+        private int[] tessFactors; // tessellation edge factors
         private readonly int tessMultp; // number of new voxels resulting of the Tessellation
         private int[] dimMultps; // for conversion from spatial index to serial index
         private int[] dimMultpsRoot;
@@ -573,6 +573,7 @@ namespace Cognita
         public void CopyGridStep(int level, double[] step, int offset = 0) => 
             Buffer.BlockCopy(scaledSteps[level], 0, step, offset, VectorSize);
 
+        public IList<int> TesselationFactors { get { return Array.AsReadOnly(tessFactors); } }
         public int TessellationMultp { get { return tessMultp; } }
         public int ActiveCount { get { return totalUsed; } }
         public IList<int> LevelsCounts { get { return levelCount.AsReadOnly(); } }
@@ -644,14 +645,14 @@ namespace Cognita
             // --- Set default tessellation factors -------------------------------
             if (tessellation != null)
             {
-                Tessellation = new int[Dimension];
-                Buffer.BlockCopy(tessellation, 0, Tessellation, 0, TessArrSize);
+                tessFactors = new int[Dimension];
+                Buffer.BlockCopy(tessellation, 0, tessFactors, 0, TessArrSize);
 
-                tessMultp = Tessellation.Aggregate((num, k) => num * k);
+                tessMultp = tessFactors.Aggregate((num, k) => num * k);
             }
             else
             {
-                Tessellation = rootLengths;
+                tessFactors = rootLengths;
                 tessMultp = rootNum;
             }
 
@@ -663,7 +664,7 @@ namespace Cognita
 
             for (int i = 1, k = 0; i < Dimension; i++, k++)
             {
-                dimMultps[i] = Tessellation[k] * dimMultps[k];
+                dimMultps[i] = tessFactors[k] * dimMultps[k];
                 dimMultpsRoot[i] = rootLengths[k] * dimMultpsRoot[k];
             }
 
@@ -683,7 +684,7 @@ namespace Cognita
             {
                 nextStep = new double[Dimension];
 
-                for (int i = 0; i < Dimension; i++) nextStep[i] = lastStep[i] / Tessellation[i];
+                for (int i = 0; i < Dimension; i++) nextStep[i] = lastStep[i] / tessFactors[i];
 
                 scaledSteps.Add(nextStep);
                 lastStep = nextStep;
@@ -770,7 +771,7 @@ namespace Cognita
                 double[] lastStep = scaledSteps[level - 1];
                 double[] nextStep = new double[Dimension];
                 
-                for (int i = 0; i < Dimension; i++) nextStep[i] = lastStep[i] / Tessellation[i];
+                for (int i = 0; i < Dimension; i++) nextStep[i] = lastStep[i] / tessFactors[i];
 
                 scaledSteps.Add(nextStep);
                 levelCount.Add(tessMultp);
@@ -787,7 +788,7 @@ namespace Cognita
                 double[] lastStep = scaledSteps[scaledSteps.Count - 1];
                 double[] nextStep = new double[Dimension];
 
-                for (int i = 0; i < Dimension; i++) nextStep[i] = lastStep[i] / Tessellation[i];
+                for (int i = 0; i < Dimension; i++) nextStep[i] = lastStep[i] / tessFactors[i];
 
                 scaledSteps.Add(nextStep);
             }
@@ -922,7 +923,7 @@ namespace Cognita
 
             while (i < Dimension)
             {
-                if (++index[i] < Tessellation[i])
+                if (++index[i] < tessFactors[i])
                 {
                     point[i] += scaledSteps[level][i];
                     return true;

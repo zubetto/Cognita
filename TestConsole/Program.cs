@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 using Cognita;
+using RBF = Cognita.SupervisedLearning.RadialBasisFunction;
 
 namespace TestConsole
 {
@@ -37,7 +38,7 @@ namespace TestConsole
                 return a / (x + y + 1);
             };
 
-            int TESTnO = 0;
+            int TESTnO = 2;
 
             #region 0_Simple_2dGrid
             if (TESTnO == 0)
@@ -183,9 +184,78 @@ namespace TestConsole
                 SB.AppendLine("----------------------------------------");
                 Console.WriteLine(SB.ToString());
             }
-        #endregion
+            #endregion
 
-        END:
+            #region 2_RadialFunction
+            if (TESTnO == 2)
+            {
+                RBF.ampAbs = 0.1;
+                RBF.Factor = 25;
+                RBF.Exponent = 1.0;
+
+                StringBuilder strOut = new StringBuilder(256);
+                string input = "";
+                double tol = 0.5;
+
+                while (input != "y")
+                {
+                    Console.Write("Enter tolerance: ");
+                    input = Console.ReadLine();
+
+                    if (!double.TryParse(input, out tol)) continue;
+
+                    RBF.CalcRanges(0.0085, 1.0, tol);
+
+                    strOut.Clear();
+                    strOut.AppendLine("  Ranges:");
+
+                    for (int i = 0; i < RBF.Ranges.Count; i++)
+                    {
+                        strOut.AppendFormat("{0,8:N6}, ", RBF.Ranges[i]);
+                    }
+
+                    strOut.AppendLine("\n\n\r  Deltas:");
+                    int inflectInd = -1;
+                    double prev = RBF.Ranges[1];
+
+                    for (int i = 1; i < RBF.Ranges.Count; i++)
+                    {
+                        double d = RBF.Ranges[i] - RBF.Ranges[i - 1];
+                        strOut.AppendFormat("{0,8:N6}, ", d);
+
+                        if (inflectInd < 0 && d > prev)
+                            inflectInd = i - 2;
+
+                        prev = d;
+                    }
+
+                    strOut.AppendFormat("\n\rinflection: {0}\n\r", inflectInd);
+
+                    strOut.AppendLine("\n\r  Widths:");
+                    inflectInd = -1;
+                    prev = RBF.Widths[0];
+
+                    for (int i = 0; i < RBF.Widths.Count; i++)
+                    {
+                        strOut.AppendFormat("{0,8:N6}, ", RBF.Widths[i]);
+
+                        if (inflectInd < 0 && RBF.Widths[i] > prev)
+                            inflectInd = i - 1;
+
+                        prev = RBF.Widths[i];
+                    }
+
+                    strOut.AppendFormat("\n\rinflection: {0}\n\r", inflectInd);
+
+                    Console.WriteLine(strOut.ToString());
+                    Console.Write("\n\rexit?: ");
+                    input = Console.ReadLine();
+                    Console.WriteLine("------------------\n\r");
+                }
+            }
+            #endregion
+
+            END:
             Console.WriteLine(">> Press any key to exit <<");
             Console.ReadKey();
         }
