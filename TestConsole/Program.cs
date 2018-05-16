@@ -189,7 +189,7 @@ namespace TestConsole
             #region 2_RadialFunction
             if (TESTnO == 2)
             {
-                RBF.ampAbs = 0.1;
+                RBF.Amplitude = 0.1;
                 RBF.Factor = 25;
                 RBF.Exponent = 1.0;
 

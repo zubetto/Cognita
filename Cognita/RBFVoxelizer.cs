@@ -13,7 +13,6 @@ namespace Cognita
         /// </summary>
         public static class RadialBasisFunction
         {
-            private static double threshold;
             private static double[] ranges; // { 0, r1, r2, ... rn }
             private static double[] widths; // { r1, r2 - r1, ... rn - rn_1 }
 
@@ -58,6 +57,7 @@ namespace Cognita
                     }
                 }
             }
+            public static double Threshold { get; private set; }
 
             public static IList<double> Ranges { get { return Array.AsReadOnly(ranges); } }
             public static IList<double> Widths { get { return Array.AsReadOnly(widths); } }
@@ -126,7 +126,7 @@ namespace Cognita
                 if (nmax > nlimit)
                     throw new Exception(string.Format("Output array length {0} exceeds the given limit {1}", nmax, nlimit));
 
-                RadialBasisFunction.threshold = threshold;
+                RadialBasisFunction.Threshold = threshold;
                 RadialBasisFunction.ranges = new double[nmax + 2];
                 RadialBasisFunction.widths = new double[nmax + 1];
 
@@ -198,7 +198,13 @@ namespace Cognita
             public static bool ThresholdExceeded(double distance, double radius)
             {
                 if (distance == 0)
+                {
                     return radius >= 0.5 * widths[0];
+                }
+                else if (distance - radius > ranges[ranges.Length - 2])
+                {
+                    return false;
+                }
 
                 int indH = Array.BinarySearch(ranges, distance);
 
@@ -217,7 +223,7 @@ namespace Cognita
             /// <returns></returns>
             public static bool ThresholdExceeded(double distance, double[] radthold)
             {
-                double Vo = MeasureAbsR2(distance * distance);
+                double Vo = MeasureAbs(distance);
                 double Vfar = MeasureAbs(distance + radthold[0]);
 
                 double h = 0.5 * radthold[1];
@@ -228,7 +234,7 @@ namespace Cognita
                 if (distance > radthold[0])
                 {
                     // at near point
-                    if (Measure(distance - radthold[0]) - Vo >= h) return true;
+                    if (MeasureAbs(distance - radthold[0]) - Vo >= h) return true;
                 }
                 else // rbf center is within the circle
                 {

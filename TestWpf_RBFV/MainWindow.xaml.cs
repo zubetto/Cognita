@@ -129,8 +129,8 @@ namespace TestWpf_RBFV
 
             RBF.Amplitude = 1.0;
             RBF.Factor = 33.0;
-            RBF.Exponent = 1.0;
-            RBF.CalcRanges(0.005, dr, 1);
+            RBF.Exponent = 1;
+            RBF.CalcRanges(0.01, dr, 1.0);
         }
 
         private void SetModelToCanvasTransform(bool fit)
@@ -658,7 +658,7 @@ namespace TestWpf_RBFV
             gridBitmap.WritePixels(new Int32Rect(0, 0, _pW, _pH), gridPixelArray, rowStride, 0, 0);
         }
 
-        private void DrawVoxels()
+        private void DrawVoxels(int stopLevel = int.MaxValue)
         {
             IVoxel ivoxel;
             int level = 0;
@@ -674,7 +674,7 @@ namespace TestWpf_RBFV
 
                 int byteLength = W * BYTESPP;
 
-                if (W == 1 || H == 1) isResolvable = false;
+                if (W == 1 || H == 1 || level > stopLevel) isResolvable = false;
 
                 do
                 {
