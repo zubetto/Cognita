@@ -1339,24 +1339,31 @@ namespace TestWpf
 
         private bool ThresholdExceeded(IVoxel voxel, double threshold)
         {
-            double min = double.PositiveInfinity;
-            double max = double.NegativeInfinity;
-            double mean = 0;
+            double min = double.NegativeInfinity;
+            double max = double.PositiveInfinity;
+            double mean = 0.0;
+
+            bool notInit = true;
 
             for (int serial = voxel.ContentSI, stop = serial + tessMultp; serial < stop; serial++)
             {
                 double val = voxelArray[serial].Data;
+                
+                if (val < min) min = val;
+                else if (val > max) max = val;
+                else if (notInit)
+                {
+                    notInit = false;
+                    min = val;
+                    max = val;
+                }
 
                 mean += val;
-
-                if (val < min) min = val;
-                if (val > max) max = val;
             }
-
-            mean /= tessMultp;
-
-            if (mean - min < threshold && max - mean < threshold) 
+            
+            if (max - min < threshold) 
             {
+                mean /= tessMultp;
                 voxel.Data = mean;
 
                 return false; // within threshold
@@ -2013,6 +2020,21 @@ namespace TestWpf
             // During the tessellation-pass, the states are switched on the contrary, from false to true
             adaptiveGrid.ProcessedState = false;
 
+            //// ### Debug
+            //void CheckState_Debug(bool state, bool? andAct = null)
+            //{
+            //    foreach (IVoxel v in voxelArray)
+            //    {
+            //        if ((v.State != state) && ((andAct == null) || (v.IsActive == andAct)))
+            //        {
+
+            //        }
+            //    }
+            //}
+
+            //// ### Debug
+            //CheckState_Debug(true);
+
             int numIn = TPSvoxels.ThreadsNum;
             int numOut = TPSvoxels.ThreadsNum;
 
@@ -2020,7 +2042,6 @@ namespace TestWpf
             var RelayOUT = new ManualResetEvent(false);
             var RelayComplete = new AutoResetEvent(false);
             
-            bool notFull = true;
             IVoxel startVoxel;
 
             adaptiveGrid.FirstAtLevel(0, out startVoxel);
@@ -2076,6 +2097,9 @@ namespace TestWpf
                         adaptiveGrid.FirstAtLevel(0, out startVoxel);
                         adaptiveGrid.ProcessedState = true;
 
+                        //// ### Debug
+                        //CheckState_Debug(false, andAct: true);
+
                         numIn = TPSvoxels.ThreadsNum;
                         RelayIN.Reset();
                         RelayOUT.Set();
@@ -2093,7 +2117,9 @@ namespace TestWpf
                     level = 0;
 
                     // level-loop
-                    while (notFull && level++ < adaptiveGrid.LevelsCounts.Count)
+                    // during tessellation, all active voxels must be handled 
+                    // to change their state to adaptiveGrid.ProcessedState
+                    while (level++ < adaptiveGrid.LevelsCounts.Count)
                     {
                         IVoxel voxel = startVoxel;
 
@@ -2114,8 +2140,6 @@ namespace TestWpf
                         {
                             adaptiveGrid.FirstAtLevel(level, out startVoxel);
 
-                            if (adaptiveGrid.IsFull) notFull = false;
-
                             numIn = TPSvoxels.ThreadsNum;
                             RelayIN.Reset();
                             RelayOUT.Set();
@@ -2133,6 +2157,9 @@ namespace TestWpf
                     // --- sync-point: update bitmaps ---
                     if (0 == Interlocked.Exchange(ref IsRefiningComplete, 1))
                     {
+                        //// ### Debug
+                        //CheckState_Debug(true);
+
                         if (block)
                         {
                             RelayComplete.Set();
@@ -2626,6 +2653,7 @@ namespace TestWpf
             if (start)
             {
                 ResetAvg();
+                SFGParallelUniformity = false;
 
                 frameTimer.Restart();
                 CompositionTarget.Rendering += UpdateFrame;

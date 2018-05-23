@@ -10,6 +10,27 @@ namespace Cognita
     {
         public static readonly double sqrt2 = Math.Sqrt(2);
 
+        /// <summary>
+        /// Calculates vector increment from this vector to the given vector r
+        /// and puts result into the dr
+        /// </summary>
+        /// <param name="ro"></param>
+        /// <param name="r"></param>
+        /// <param name="dr"></param>
+        public static void VectorIncrement(this double[] ro, double[] r, double[] dr)
+        {
+            for (int i = 0; i < ro.Length; i++)
+            {
+                dr[i] = r[i] - ro[i];
+            }
+        }
+
+        /// <summary>
+        /// Returns squared Euclidean distance between this point and the given point
+        /// </summary>
+        /// <param name="center"></param>
+        /// <param name="point"></param>
+        /// <returns></returns>
         public static double SquaredDistance(this double[] center, double[] point)
         {
             double r2 = 0;
@@ -21,6 +42,62 @@ namespace Cognita
             }
 
             return r2;
+        }
+
+        /// <summary>
+        /// Returns squared Euclidean distance between this point and the target point
+        /// and puts the vector equal to the difference of the target and this point, 
+        /// into the target
+        /// </summary>
+        /// <param name="center"></param>
+        /// <param name="target"></param>
+        /// <returns></returns>
+        public static double SquaredDistanceAndDelta(this double[] center, double[] target)
+        {
+            double r2 = 0;
+
+            for (int i = 0; i < center.Length; i++)
+            {
+                target[i] -= center[i];
+                r2 += target[i] * target[i];
+            }
+
+            return r2;
+        }
+
+        /// <summary>
+        /// Returns squared Euclidean norm of this vector
+        /// </summary>
+        /// <param name="r"></param>
+        /// <returns></returns>
+        public static double SquaredNorm(this double[] r)
+        {
+            double norm = 0;
+
+            foreach (double x in r)
+                norm += x * x;
+
+            return norm;
+        }
+
+        /// <summary>
+        /// Returns squared norm of this vector changed by the given increment dr;
+        /// This vector and dr remain intact
+        /// </summary>
+        /// <param name="r"></param>
+        /// <param name="dr"></param>
+        /// <returns></returns>
+        public static double SquaredNormIncrement(this double[] r, double[] dr)
+        {
+            double squaredNorm = 0.0;
+
+            for (int i = 0; i < r.Length; i++)
+            {
+                double dx = r[i] + dr[i];
+                squaredNorm += dx * dx;
+            }
+
+            return squaredNorm;
         }
 
         /// <summary>

@@ -218,7 +218,7 @@ namespace Cognita
             /// Returns true if RBF increment within the given circle 
             /// exceeds the given threshold;
             /// </summary>
-            /// <param name="distatce">The distance between centers of RBF and the circle</param>
+            /// <param name="distance">The distance between centers of RBF and the circle</param>
             /// <param name="radthold">{ circle_radius, threshold }</param>
             /// <returns></returns>
             public static bool ThresholdExceeded(double distance, double[] radthold)

@@ -80,6 +80,12 @@ namespace Cognita
             IList<double> GridStep { get; }
 
             /// <summary>
+            /// Calculates coordinates of the voxel center
+            /// </summary>
+            /// <param name="point">The array into which coords will be placed</param>
+            void GetCenter(double[] point);
+
+            /// <summary>
             /// Copies the coords of the origin of this voxel to the given "point" array
             /// starting at the given offset; O(1)
             /// </summary>
@@ -184,6 +190,14 @@ namespace Cognita
             public IList<double> Origin { get { return Array.AsReadOnly(gridOrigin); } }
             public IList<double> GridStep { get { return Array.AsReadOnly(root.scaledSteps[Level]); } }
 
+            public void GetCenter(double[] point)
+            {
+                for (int i = 0; i < gridOrigin.Length; i++)
+                {
+                    point[i] = gridOrigin[i] + 0.5 * root.scaledSteps[Level][i];
+                }
+            }
+
             public void CopyOrigin(double[] point, int offset = 0) => 
                 Buffer.BlockCopy(gridOrigin, 0, point, offset, root.VectorSize);
 
@@ -249,15 +263,40 @@ namespace Cognita
                 if (mandatorily) Monitor.Enter(locker);
                 else
                 {
+                    // The checking of the state in advance gives tangible performance increase...
                     if (state == root.ProcessedState || !Monitor.TryEnter(locker)) return false;
 
-                    state = root.ProcessedState;
+                    // ...but in very rare cases it is possible that some thread will pass through
+                    // the above check after another one has already set the state to processed, 
+                    // completed the loop below and unlocked this voxel
+                    if (state == root.ProcessedState)
+                    {
+                        Monitor.Exit(locker);
+                        return false;
+                    }
+                    else state = root.ProcessedState;
                 }
+
+                //// It looks more correct than the above variant but it is slower
+                //if (mandatorily)
+                //{
+                //    Monitor.Enter(locker);
+                //}
+                //else if (!Monitor.TryEnter(locker))
+                //{
+                //    return false;
+                //}
+                //else if (state == root.ProcessedState)
+                //{
+                //    Monitor.Exit(locker);
+                //    return false;
+                //}
+                //else state = root.ProcessedState;
 
                 try
                 {
                     if (isFree || contentSI <= 0) return false;
-
+                    
                     for (int serial = contentSI, stop = serial + root.tessMultp; serial < stop; serial++)
                     {
                         Voxel voxel = root.VStorage[serial];
@@ -285,9 +324,18 @@ namespace Cognita
                 if (mandatorily) Monitor.Enter(locker);
                 else
                 {
+                    // The checking of the state in advance gives tangible performance increase...
                     if (state == root.ProcessedState || !Monitor.TryEnter(locker)) return false;
 
-                    state = root.ProcessedState;
+                    // ...but in very rare cases it is possible that some thread will pass through
+                    // the above check after another one has already set the state to processed, 
+                    // completed the loop below and unlocked this voxel
+                    if (state == root.ProcessedState)
+                    {
+                        Monitor.Exit(locker);
+                        return false;
+                    }
+                    else state = root.ProcessedState;
                 }
 
                 try
@@ -347,9 +395,18 @@ namespace Cognita
                 if (mandatorily) Monitor.Enter(locker);
                 else
                 {
+                    // The checking of the state in advance gives tangible performance increase...
                     if (state == root.ProcessedState || !Monitor.TryEnter(locker)) return false;
 
-                    state = root.ProcessedState;
+                    // ...but in very rare cases it is possible that some thread will pass through
+                    // the above check after another one has already set the state to processed, 
+                    // completed the loop below and unlocked this voxel
+                    if (state == root.ProcessedState)
+                    {
+                        Monitor.Exit(locker);
+                        return false;
+                    }
+                    else state = root.ProcessedState;
                 }
 
                 //Stack<object> locksBunch = null; // Deep Lock
@@ -451,9 +508,18 @@ namespace Cognita
                 if (mandatorily) Monitor.Enter(locker);
                 else
                 {
+                    // The checking of the state in advance gives tangible performance increase...
                     if (state == root.ProcessedState || !Monitor.TryEnter(locker)) return false;
 
-                    state = root.ProcessedState;
+                    // ...but in very rare cases it is possible that some thread will pass through
+                    // the above check after another one has already set the state to processed, 
+                    // completed the loop below and unlocked this voxel
+                    if (state == root.ProcessedState)
+                    {
+                        Monitor.Exit(locker);
+                        return false;
+                    }
+                    else state = root.ProcessedState;
                 }
 
                 try
@@ -554,7 +620,7 @@ namespace Cognita
         private double[] rootOrigin;
         private double[] rootStep;
         private int[] rootLengths; // max = step * regularLengths[coordIndex];
-        private readonly int rootNum; // the number of voxels in the root-grid
+        public readonly int RootsNumber; // the number of voxels in the root-grid
 
         private List<double[]> scaledSteps; // grid steps, precalculated for several scales
         private List<int> levelCount; // the number of voxels at levels
@@ -629,7 +695,7 @@ namespace Cognita
             rootOrigin = new double[Dimension];
             rootLengths = new int[Dimension];
             
-            rootNum = 1;
+            RootsNumber = 1;
             
             // --- Convert the Shape array and calculate total number of voxels in the corresponding regular grid -----------
             for (int i = 0; i < Dimension; i++)
@@ -639,7 +705,7 @@ namespace Cognita
                 rootOrigin[i] = Shape[i, 0];
                 rootStep[i] = (Shape[i, 1] - Shape[i, 0]) / rootLengths[i];
 
-                rootNum *= rootLengths[i];
+                RootsNumber *= rootLengths[i];
             }
 
             // --- Set default tessellation factors -------------------------------
@@ -653,7 +719,7 @@ namespace Cognita
             else
             {
                 tessFactors = rootLengths;
-                tessMultp = rootNum;
+                tessMultp = RootsNumber;
             }
 
             // calc dimension multipliers
@@ -669,14 +735,14 @@ namespace Cognita
             }
 
             // --- Preliminary calculations of the scaled grid steps --------------
-            if (tessDepth < 0 && rootNum > 1) tessDepth = 2 * tessNum / rootNum;
+            if (tessDepth < 0 && RootsNumber > 1) tessDepth = 2 * tessNum / RootsNumber;
             else tessDepth = Math.Min(tessNum, tessDepth);
 
             scaledSteps = new List<double[]>(++tessDepth); // +1 for the root
             scaledSteps.Add(rootStep);
 
-            levelCount = new List<int>(tessDepth) { rootNum };
-            totalUsed = rootNum;
+            levelCount = new List<int>(tessDepth) { RootsNumber };
+            totalUsed = RootsNumber;
 
             double[] lastStep = rootStep, nextStep;
             
@@ -691,7 +757,7 @@ namespace Cognita
             }
 
             // --- Initialization of voxels --------------------------------------
-            int capacity = rootNum + tessNum * tessMultp;
+            int capacity = RootsNumber + tessNum * tessMultp;
 
             VStorage = new Voxel[capacity];
 
@@ -701,14 +767,14 @@ namespace Cognita
             Buffer.BlockCopy(rootOrigin, 0, Oi, 0, VectorSize);
 
             // ini root voxels
-            for (int serial = 0; serial < rootNum; serial++)
+            for (int serial = 0; serial < RootsNumber; serial++)
             {
                 VStorage[serial] = new Voxel(this, serial, Oi, initializer, iniValue);
                 NextPoint(index, Oi);
             }
 
             // ini remaining voxels
-            for (int serial = rootNum; serial < capacity; serial++)
+            for (int serial = RootsNumber; serial < capacity; serial++)
             {
                 VStorage[serial] = new Voxel(this, serial);
             }
@@ -716,11 +782,11 @@ namespace Cognita
             // --- Set indexCache ----------------------------------------------------
             freeNum = tessNum;
 
-            if (cacheLength <= 0) cacheLength = Math.Min(capacity - rootNum, MaxCacheLength);
-            else cacheLength = Math.Min(capacity - rootNum, cacheLength);
+            if (cacheLength <= 0) cacheLength = Math.Min(capacity - RootsNumber, MaxCacheLength);
+            else cacheLength = Math.Min(capacity - RootsNumber, cacheLength);
 
             indexCache = new int[cacheLength];
-            indexCache[0] = rootNum;
+            indexCache[0] = RootsNumber;
             cacheEndex = cacheLength - 1;
             cacheInd = 0;
         }
@@ -849,7 +915,7 @@ namespace Cognita
                 }
                 else // search vacancies directly in VStorage
                 {
-                    for (int i = rootNum; i < VStorage.Length; i += tessMultp)
+                    for (int i = RootsNumber; i < VStorage.Length; i += tessMultp)
                     {
                         if (VStorage[i].isFree)
                         {
@@ -952,7 +1018,7 @@ namespace Cognita
             Voxel V;
             int index = serials[0];
 
-            if (index < rootNum) V = VStorage[index];
+            if (index < RootsNumber) V = VStorage[index];
             else return false;
 
             for (int i = 1; i < serials.Length; i++)
@@ -997,7 +1063,7 @@ namespace Cognita
                 
                 if (V.Level == 0)
                 {
-                    if (serial >= rootNum) return false; // all voxels has been traversed
+                    if (serial >= RootsNumber) return false; // all voxels has been traversed
                 }
                 else if (serial - V.ancestor.contentSI >= tessMultp)
                 {
@@ -1101,7 +1167,7 @@ namespace Cognita
             {
                 int serial = currV.SerialIndex + stride;
 
-                if (serial >= rootNum) return false;
+                if (serial >= RootsNumber) return false;
 
                 currV = VStorage[serial];
                 return true;
@@ -1118,7 +1184,7 @@ namespace Cognita
 
                 if (V.Level == 0)
                 {
-                    if (serial >= rootNum) return false; // all voxels has been traversed
+                    if (serial >= RootsNumber) return false; // all voxels has been traversed
                 }
                 else if (serial - V.ancestor.contentSI >= tessMultp)
                 {
@@ -1195,7 +1261,7 @@ namespace Cognita
             // at the root level
             serial = currV.SerialIndex + 1;
 
-            if (serial < rootNum) // then go to the next voxel at the root level
+            if (serial < RootsNumber) // then go to the next voxel at the root level
             {
                 currV = VStorage[serial];
 
@@ -1323,7 +1389,7 @@ namespace Cognita
 
             ivoxel = null;
 
-            for (int i = 0; i < rootNum; i++)
+            for (int i = 0; i < RootsNumber; i++)
             {
                 var V = VStorage[i];
 
@@ -1548,6 +1614,201 @@ namespace Cognita
 
             if (GetInnermost(point, out voxel)) return voxel.Tessellate(mandatorily, initializer, iniValue);
             else return false;
+        }
+
+        /// <summary>
+        /// Translates relative serial index to corresponding index-vector
+        /// at the root level
+        /// </summary>
+        /// <param name="rsi"></param>
+        /// <param name="indexVector"></param>
+        private void DecomposeRootSI(int rsi, int[] indexVector)
+        {
+            int i = Dimension;
+
+            do
+            {
+                --i;
+
+                indexVector[i] = Math.DivRem(rsi, dimMultpsRoot[i], out rsi);
+            }
+            while (i > 1);
+
+            indexVector[0] = rsi;
+        }
+
+        /// <summary>
+        /// Translates relative serial index to corresponding index-vector
+        /// at all levels except the root
+        /// </summary>
+        /// <param name="rsi"></param>
+        /// <param name="indexVector"></param>
+        private void DecomposeRSI(int rsi, int[] indexVector)
+        {
+            int i = Dimension;
+
+            do
+            {
+                --i;
+
+                indexVector[i] = Math.DivRem(rsi, dimMultps[i], out rsi);
+            }
+            while (i > 1);
+
+            indexVector[0] = rsi;
+        }
+
+        /// <summary>
+        /// Translates relative serial index to corresponding index-vector
+        /// </summary>
+        /// <param name="rsi"></param>
+        /// <param name="indexVector"></param>
+        /// <param name="dimMultps"></param>
+        private static void DecomposeRSI(int rsi, int[] indexVector, int[] dimMultps)
+        {
+            int i = dimMultps.Length;
+
+            do
+            {
+                --i;
+
+                indexVector[i] = Math.DivRem(rsi, dimMultps[i], out rsi);
+            }
+            while (i > 1);
+
+            indexVector[0] = rsi;
+        }
+
+        // buffers for the GetIncrements and GetSerialIncrements methods
+        private int[] currIndexVector;
+        private int[] prevIndexVector;
+
+        /// <summary>
+        /// Calculates vector increments between centers of voxels with one direct ancestor;
+        /// Vector increments array indexing: [tip_index][origin_index][component_index]
+        /// </summary>
+        /// <param name="level">The level of voxels which centers are connected by the vector increments</param>
+        /// <param name="increments">Array to storing results; should be initialized</param>
+        /// <returns></returns>
+        public void GetIncrements(int level, double[][][] increments)
+        {
+            if (currIndexVector == null)
+                currIndexVector = new int[Dimension];
+
+            if (prevIndexVector == null)
+                prevIndexVector = new int[Dimension];
+
+            int[] dimStepsNum;
+
+            if (level == 0)
+                dimStepsNum = dimMultpsRoot;
+            else
+                dimStepsNum = dimMultps;
+
+            // traversal of all meaningful combinations of currSI and prevSI indexes
+            for (int currSI = 1; currSI < increments.Length; currSI++)
+            {
+                DecomposeRSI(currSI, currIndexVector, dimStepsNum);
+
+                for (int prevSI = 0; prevSI < currSI; prevSI++)
+                {
+                    DecomposeRSI(prevSI, prevIndexVector, dimStepsNum);
+
+                    // set the Increments components to scaled steps at the given level
+                    Buffer.BlockCopy(scaledSteps[level], 0, increments[currSI][prevSI], 0, VectorSize);
+                    
+                    for (int i = 0; i < Dimension; i++)
+                    {
+                        prevIndexVector[i] = -prevIndexVector[i];
+                        prevIndexVector[i] += currIndexVector[i];
+
+                        increments[currSI][prevSI][i] *= prevIndexVector[i];
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Returns array of vector increments between centers of voxels with one direct ancestor;
+        /// Vector increments array indexing: [tip_index][origin_index][component_index]
+        /// </summary>
+        /// <param name="level">The level of voxels which centers are connected by the vector increments</param>
+        /// <returns></returns>
+        public double[][][] GetIncrements(int level)
+        {
+            // Increments length is set to tessMultp to provide 
+            // compliance with relative SI of a voxel
+            var Increments = new double[tessMultp][][];
+
+            for (int i = 1; i < Increments.Length; i++)
+            {
+                var normInc = new double[i][];
+                Increments[i] = normInc;
+
+                for (int n = 0; n < i; n++)
+                {
+                    normInc[n] = new double[Dimension];
+                }
+            }
+
+            GetIncrements(level, Increments);
+
+            return Increments;
+        }
+
+        /// <summary>
+        /// Calculates vector increments between centers of voxels with one direct ancestor;
+        /// All vector increments originate from the center of the first child of the ancestor
+        /// </summary>
+        /// <param name="level">The level of voxels which centers are connected by the vector increments</param>
+        /// <param name="increments">Array to storing results; should be initialized</param>
+        /// <returns></returns>
+        public void GetSerialIncrements(int level, double[][] increments)
+        {
+            if (currIndexVector == null)
+                currIndexVector = new int[Dimension];
+
+            int[] dimStepsNum;
+
+            if (level == 0)
+                dimStepsNum = dimMultpsRoot;
+            else
+                dimStepsNum = dimMultps;
+            
+            for (int currSI = 1; currSI < increments.Length; currSI++)
+            {
+                DecomposeRSI(currSI, currIndexVector, dimStepsNum);
+
+                // set the Increments components to scaled steps at the given level
+                Buffer.BlockCopy(scaledSteps[level], 0, increments[currSI], 0, VectorSize);
+
+                for (int i = 0; i < Dimension; i++)
+                {
+                    increments[currSI][i] *= currIndexVector[i];
+                }
+            }
+        }
+
+        /// <summary>
+        /// Returns array of vector increments between centers of voxels with one direct ancestor;
+        /// All vector increments originate from the center of the first child of the ancestor
+        /// </summary>
+        /// <param name="level">The level of voxels which centers are connected by the vector increments</param>
+        /// <returns></returns>
+        public double[][] GetSerialIncrements(int level)
+        {
+            // Increments length is set to tessMultp to provide 
+            // compliance with relative SI of a voxel
+            var Increments = new double[tessMultp][];
+
+            for (int i = 1; i < Increments.Length; i++)
+            {
+                Increments[i] = new double[Dimension];
+            }
+
+            GetSerialIncrements(level, Increments);
+
+            return Increments;
         }
 
         ////### Debug:Voxel.state
