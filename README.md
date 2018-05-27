@@ -18,7 +18,7 @@ is implemented as voxel tree. Each voxel exposes its properties and methods thro
 The  maximum number of voxels and shape of the grid are set at creation time of the _AdaptiveGrid_ instance and can't be changed 
 during the  liftime of the instance. The voxels are stored in the internal single-dimensional array, which entirely initialized at creation 
 time of the _AdaptiveGrid_ instance. So, during different manipulations with the grid (voxel tessellation or merging), 
-voxels only are changed their properties and no voxel instances are created or deleted. The grid can be processed in multithreaded manner. 
+voxels are only changed their properties and no voxel instances are created or deleted. The grid can be processed in multithreaded manner. 
 The methods 
 [_RefineGrid_CGParallel_](https://github.com/zubetto/Cognita/blob/be324e36a6f88cd0f0c868d00be35bdcfbe5d534/TestWpf/MainWindow.xaml.cs#L1509), 
 [_RefineGrid_FGParallel_](https://github.com/zubetto/Cognita/blob/be324e36a6f88cd0f0c868d00be35bdcfbe5d534/TestWpf/MainWindow.xaml.cs#L1816) 
