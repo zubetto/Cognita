@@ -43,5 +43,5 @@ testing of the grid refinement processes and for fun in some ways.
 ![Cognita_SolarSpecks_003](https://raw.githubusercontent.com/zubetto/Cognita/master/Cognita_SolarSpecks_003.png)
 
 <div>
-<iframe width="560" height="315" src="https://www.youtube.com/embed/Cp7wI2BTWIs" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+<iframe width="640" height="360" src="https://www.youtube.com/embed/Cp7wI2BTWIs" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
 </div>
