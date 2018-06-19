@@ -1,7 +1,8 @@
 # Cognita
 ### Concept
 This is the educational project with main purpose is to develop and test the multidimensional adaptive grid which can be used in 
-[Reinforcement Learning](https://en.wikipedia.org/wiki/Reinforcement_learning) area. 
+[Supervised Learning](https://youtu.be/Cp7wI2BTWIs) and
+[Reinforcement Learning](https://en.wikipedia.org/wiki/Reinforcement_learning) areas. 
 Additional purpose of this project is to learn and try CUDA programming with [Alea GPU](http://www.aleagpu.com/release/3_0_4/doc/).  
 
 In typical reinforcement learning scenario an agent takes actions corresponding to current policy and state of an environment.
