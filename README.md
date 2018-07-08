@@ -44,6 +44,7 @@ testing of the grid refinement processes and for fun in some ways.
 
 #### Raster Approach in Supervised Learning
 ![ZipCodesDataset](https://raw.githubusercontent.com/zubetto/Cognita/master/hw8_q5-6_f10_720.gif)  
+![ZipCodesDataset correct](https://raw.githubusercontent.com/zubetto/Cognita/master/hw8_q5-6_f10-500_balanced-unb_720.gif)
 
 <div>
 <iframe width="640" height="360" src="https://www.youtube.com/embed/Cp7wI2BTWIs" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
