@@ -1,7 +1,8 @@
 # Cognita
 ### Concept
 This is the educational project with main purpose is to develop and test the multidimensional adaptive grid which can be used in 
-[Reinforcement Learning](https://en.wikipedia.org/wiki/Reinforcement_learning) area. 
+[Supervised Learning](https://youtu.be/Cp7wI2BTWIs) and
+[Reinforcement Learning](https://en.wikipedia.org/wiki/Reinforcement_learning) areas. 
 Additional purpose of this project is to learn and try CUDA programming with [Alea GPU](http://www.aleagpu.com/release/3_0_4/doc/).  
 
 In typical reinforcement learning scenario an agent takes actions corresponding to current policy and state of an environment.
@@ -18,7 +19,7 @@ is implemented as voxel tree. Each voxel exposes its properties and methods thro
 The  maximum number of voxels and shape of the grid are set at creation time of the _AdaptiveGrid_ instance and can't be changed 
 during the  liftime of the instance. The voxels are stored in the internal single-dimensional array, which entirely initialized at creation 
 time of the _AdaptiveGrid_ instance. So, during different manipulations with the grid (voxel tessellation or merging), 
-voxels only are changed their properties and no voxel instances are created or deleted. The grid can be processed in multithreaded manner. 
+voxels are only changed their properties and no voxel instances are created or deleted. The grid can be processed in multithreaded manner. 
 The methods 
 [_RefineGrid_CGParallel_](https://github.com/zubetto/Cognita/blob/be324e36a6f88cd0f0c868d00be35bdcfbe5d534/TestWpf/MainWindow.xaml.cs#L1509), 
 [_RefineGrid_FGParallel_](https://github.com/zubetto/Cognita/blob/be324e36a6f88cd0f0c868d00be35bdcfbe5d534/TestWpf/MainWindow.xaml.cs#L1816) 
@@ -40,3 +41,11 @@ testing of the grid refinement processes and for fun in some ways.
 ![Cognita_SolarSpecks_001](https://raw.githubusercontent.com/zubetto/Cognita/master/Cognita_SolarSpecks_001.png)
 ![Cognita_SolarSpecks_002](https://raw.githubusercontent.com/zubetto/Cognita/master/Cognita_SolarSpecks_002.png)
 ![Cognita_SolarSpecks_003](https://raw.githubusercontent.com/zubetto/Cognita/master/Cognita_SolarSpecks_003.png)
+
+#### Raster Approach in Supervised Learning
+![ZipCodesDataset](https://raw.githubusercontent.com/zubetto/Cognita/master/hw8_q5-6_f10_720.gif)  
+![ZipCodesDataset correct](https://raw.githubusercontent.com/zubetto/Cognita/master/hw8_q5-6_f10-500_balanced-unb_720.gif)
+
+<div>
+<iframe width="640" height="360" src="https://www.youtube.com/embed/Cp7wI2BTWIs" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+</div>
