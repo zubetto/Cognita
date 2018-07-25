@@ -6,17 +6,18 @@
         xmlns:local="clr-namespace:TestWpf_RBFV"
         mc:Ignorable="d"
         SnapsToDevicePixels="True"
-        Title="Adaptive Grid" Height="777" Width="1050" Background="#FF232323" ResizeMode="CanMinimize" FontFamily="Consolas" Top="20" Left="20">
+        Title="Adaptive Grid" Height="1017" Width="1290" Background="#FF232323" ResizeMode="CanMinimize" FontFamily="Consolas" Top="20" Left="20">
     <Grid x:Name="RootGrid">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="645*"/>
             <ColumnDefinition Width="300"/>
         </Grid.ColumnDefinitions>
 
-        <Canvas x:Name="MainCanvas" Margin="9" Background="#FF383838" Width="720" Height="720" HorizontalAlignment="Left" VerticalAlignment="Top"
-                MouseLeftButtonDown="MainCanvas_MouseLeftButtonDown">
+        <Canvas x:Name="MainCanvas" Margin="9" Background="#FF383838" Width="960" Height="960" HorizontalAlignment="Left" VerticalAlignment="Top"
+                MouseLeftButtonDown="MainCanvas_MouseLeftButtonDown" ClipToBounds="True">
             
             <Image x:Name="ModelImage"/>
+            <Image x:Name="ModelRbfImage"/>
             <Image x:Name="GridImage"/>
 
             <Rectangle x:Name="GridBorderRect" Stroke="#3FAAAAAA" StrokeThickness="1" Canvas.Left="0" Canvas.Top="0"
@@ -34,12 +35,199 @@
                 </Rectangle.Fill>
             </Rectangle>
 
+            <Rectangle x:Name="PointerRect" Width="20" Height="20" Fill="{StaticResource CrossPointer}" Canvas.Left="0" Canvas.Top="0"/>
+
         </Canvas>
 
         <StackPanel x:Name="MainStack" Grid.Column="1" Margin="9,9,9,20">
+            <!-- RBF Settings  block -->
+            <StackPanel x:Name="RbfStack">
+                <TextBlock x:Name="RbfTxtBlock" Text="RBF" Foreground="Gainsboro" FontSize="16"/>
 
-            <!-- Total info block -->
-            <TextBlock x:Name="InfoTxtBlock" Text="Total info" Foreground="Gainsboro" FontSize="16" Margin="0,20,0,0"/>
+                <TextBlock x:Name="LRBFamplitudeTxtBlock" Text="Amplitudes:" FontSize="14" Margin="20,5,0,0" Height="20" Padding="2,1,0,0"
+                       Foreground="{StaticResource TxtParamsFore}"
+                       Background="{StaticResource TxtParamsBack}"/>
+                <TextBox x:Name="RBFamplitudeTextBox" Text="1.0, -1.0" Height="20" FontSize="14" Margin="20,-20,0,0" MaxLines="1" MaxLength="20"
+                     HorizontalContentAlignment="Right"
+                     CaretBrush="{StaticResource CaretBrush}"
+                     Background="{x:Null}" 
+                     BorderBrush="{x:Null}"
+                     KeyDown="RBFamplitudeTextBox_KeyDown"
+                     LostKeyboardFocus="RBFamplitudeTextBox_LostKeyboardFocus"/>
+
+                <TextBlock x:Name="LRBFfactorTxtBlock" Text="Factor:" FontSize="14" Margin="20,0,0,0" Height="20" Padding="2,1,0,0"
+                       Foreground="{StaticResource TxtParamsFore}"/>
+                <TextBox x:Name="RBFfactorTextBox" Text="25.0" Height="20" FontSize="14" Margin="20,-20,0,0" MaxLines="1" MaxLength="20"
+                     HorizontalContentAlignment="Right"
+                     CaretBrush="{StaticResource CaretBrush}"
+                     Background="{x:Null}" 
+                     BorderBrush="{x:Null}"
+                     KeyDown="RBFfactorTextBox_KeyDown"
+                     LostKeyboardFocus="RBFfactorTextBox_LostKeyboardFocus"/>
+
+                <TextBlock x:Name="LRBFexponentTxtBlock" Text="Exponent:" FontSize="14" Margin="20,0,0,0" Height="20" Padding="2,1,0,0"
+                       Foreground="{StaticResource TxtParamsFore}"
+                       Background="{StaticResource TxtParamsBack}"/>
+                <TextBox x:Name="RBFexponentTextBox" Text="1.0" Height="20" FontSize="14" Margin="20,-20,0,0" MaxLines="1" MaxLength="20"
+                     HorizontalContentAlignment="Right"
+                     CaretBrush="{StaticResource CaretBrush}"
+                     Background="{x:Null}" 
+                     BorderBrush="{x:Null}"
+                     KeyDown="RBFexponentTextBox_KeyDown"
+                     LostKeyboardFocus="RBFexponentTextBox_LostKeyboardFocus"/>
+            </StackPanel>
+            
+            <!-- Data Settings -->
+            <StackPanel x:Name="DataStack">
+                <TextBlock x:Name="DataTxtBlock" Text="Data" Foreground="Gainsboro" FontSize="16" Margin="0,20,0,0"/>
+
+                <TextBlock x:Name="LBatchNumTxtBlock" Text="Batch length:" FontSize="14" Margin="20,5,0,0" Height="20" Padding="2,1,0,0"
+                       Foreground="{StaticResource TxtParamsFore}"
+                       Background="{StaticResource TxtParamsBack}"/>
+                <TextBox x:Name="BatchNumTextBox" Text="100" Height="20" FontSize="14" Margin="20,-20,0,0" MaxLines="1" MaxLength="15"
+                     HorizontalContentAlignment="Right"
+                     CaretBrush="{StaticResource CaretBrush}"
+                     Background="{x:Null}" 
+                     BorderBrush="{x:Null}"
+                     KeyDown="BatchNumTextBox_KeyDown"
+                     LostKeyboardFocus="BatchNumTextBox_LostKeyboardFocus"/>
+
+                <TextBlock x:Name="LDataNoiseTxtBlock" Text="Add noise:" FontSize="14" Margin="20,0,0,0" Height="20" Padding="2,1,0,0"
+                       Foreground="{StaticResource TxtParamsFore}"/>
+                <TextBox x:Name="DataNoiseTxtBox" Text="0.01" Height="20" FontSize="14" Margin="20,-20,0,0" MaxLines="1" MaxLength="25"
+                     HorizontalContentAlignment="Right"
+                     CaretBrush="{StaticResource CaretBrush}"
+                     Background="{x:Null}" 
+                     BorderBrush="{x:Null}"
+                     KeyDown="DataNoiseTxtBox_KeyDown"
+                     LostKeyboardFocus="DataNoiseTxtBox_LostKeyboardFocus"/>
+
+                <TextBlock x:Name="LModelTxtBlock" Text="Source:" FontSize="14" Margin="20,0,0,0" Height="20" Padding="2,1,0,0"
+                       Foreground="{StaticResource TxtParamsFore}"
+                       Background="{StaticResource TxtParamsBack}"/>
+                <ComboBox x:Name="ModelList" Text="40" FontSize="14" Height="20" Margin="20,-20,0,0" Padding="0,0,2,1" IsEditable="False"
+                     HorizontalContentAlignment="Right"
+                     VerticalContentAlignment="Center"
+                     Foreground="{StaticResource TxtEditableFore}"
+                     Background="{x:Null}" 
+                     BorderBrush="{x:Null}"
+                     Style="{DynamicResource ComboBoxStyle}"/>
+
+                <StackPanel x:Name="DataBttStack" Margin="20,5,0,0" Height="20" Orientation="Horizontal" FlowDirection="RightToLeft">
+                    <Button x:Name="PreviewButton" Content="Preview" Padding="5,1" FontSize="13" Height="20" IsEnabled="False"
+                            BorderBrush="{x:Null}"
+                            Background="{StaticResource TxtParamsBack}"
+                            Foreground="{StaticResource TxtEditableFore}"
+                            Style="{StaticResource BttWordy}" VerticalContentAlignment="Center"
+                            Click="PreviewButton_Click"/>
+
+                    <Button x:Name="PreviewNextButton" Content="Preview Next" Margin="5,0,0,0" Padding="5,1" FontSize="13" Height="20" 
+                            BorderBrush="{x:Null}"
+                            Background="{StaticResource TxtParamsBack}"
+                            Foreground="{StaticResource TxtEditableFore}"
+                            Style="{StaticResource BttWordy}" VerticalContentAlignment="Center"
+                            Click="PreviewNextButton_Click"/>
+                </StackPanel>
+            </StackPanel>
+            
+            <!-- Grid Settings block -->
+            <StackPanel x:Name="GridStack" Width="Auto">
+                <TextBlock x:Name="GridSettingsTxtBlock" Text="Grid Settings" Foreground="Gainsboro" FontSize="16" Margin="0,20,0,0"/>
+
+                <TextBlock x:Name="LRootShapeTxtBlock" Text="Root Nx,Ny,W,H:" FontSize="14" Margin="20,5,0,0" Height="20" Padding="2,1,0,0"
+                       Foreground="{StaticResource TxtParamsFore}"
+                       Background="{StaticResource TxtParamsBack}"/>
+                <TextBox x:Name="RootShapeTxtBox" Text="3,3,960,960" Height="20" FontSize="14" Margin="20,-20,0,0" MaxLines="1" MaxLength="15"
+                     HorizontalContentAlignment="Right"
+                     CaretBrush="{StaticResource CaretBrush}"
+                     Background="{x:Null}" 
+                     BorderBrush="{x:Null}" 
+                     LostKeyboardFocus="RootShapeTxtBox_LostKeyFocus"
+                     KeyDown="RootShapeTxtBox_KeyDown"/>
+
+
+                <TextBlock x:Name="LTessShapeTxtBlock" Text="Inner Nx,Ny:" FontSize="14" Margin="20,0,0,0" Height="20" Padding="2,1,0,0"
+                       Foreground="{StaticResource TxtParamsFore}"/>
+                <TextBox x:Name="TessShapeTxtBox" Text="2,2" Height="20" FontSize="14" Margin="20,-20,0,0" MaxLines="1" MaxLength="9"
+                     HorizontalContentAlignment="Right"
+                     CaretBrush="{StaticResource CaretBrush}" 
+                     Background="{x:Null}" 
+                     BorderBrush="{x:Null}"
+                     LostKeyboardFocus="TessShapeTxtBox_LostKeyFocus"
+                     KeyDown="TessShapeTxtBox_KeyDown"/>
+
+
+                <TextBlock x:Name="LTessNumTxtBlock" Text="Tessellations:" FontSize="14" Margin="20,0,0,0" Height="20" Padding="2,1,0,0"
+                       Foreground="{StaticResource TxtParamsFore}"
+                       Background="{StaticResource TxtParamsBack}"/>
+                <TextBox x:Name="TessNumTxtBox" Text="40" Height="20" FontSize="14" Margin="20,-20,0,0" MaxLines="1" MaxLength="25"
+                     HorizontalContentAlignment="Right"
+                     CaretBrush="{StaticResource CaretBrush}"
+                     Background="{x:Null}" 
+                     BorderBrush="{x:Null}" 
+                     LostKeyboardFocus="TessNumTxtBox_LostKeyFocus"
+                     KeyDown="TessNumTxtBox_KeyDown"/>
+
+
+                <TextBlock x:Name="LThresholdTxtBlock" Text="Threshold:" FontSize="14" Margin="20,0,0,0" Height="20" Padding="2,1,0,0"
+                       Foreground="{StaticResource TxtParamsFore}"/>
+                <TextBox x:Name="ThresholdTxtBox" Text="0.005" Height="20" FontSize="14" Margin="20,-20,0,0" MaxLines="1" MaxLength="9"
+                     HorizontalContentAlignment="Right"
+                     CaretBrush="{StaticResource CaretBrush}" 
+                     Background="{x:Null}" 
+                     BorderBrush="{x:Null}"
+                     LostKeyboardFocus="ThresholdTxtBox_LostKeyFocus"
+                     KeyDown="ThresholdTxtBox_KeyDown"/>
+
+                <TextBlock x:Name="LDetailsFactorTxtBlock" Text="Details factor:" FontSize="14" Margin="20,0,0,0" Height="20" Padding="2,1,0,0"
+                       Foreground="{StaticResource TxtParamsFore}"
+                       Background="{StaticResource TxtParamsBack}"/>
+                <TextBox x:Name="DetailsFactorTxtBox" Text="1.0" Height="20" FontSize="14" Margin="20,-20,0,0" MaxLines="1" MaxLength="9"
+                     HorizontalContentAlignment="Right"
+                     CaretBrush="{StaticResource CaretBrush}" 
+                     Background="{x:Null}" 
+                     BorderBrush="{x:Null}"
+                     KeyDown="DetailsFactorTxtBox_KeyDown"
+                     LostKeyboardFocus="DetailsFactorTxtBox_LostKeyboardFocus"/>
+
+                <TextBlock x:Name="LMonotonicityTxtBlock" Text="Monotonicity limit:" FontSize="14" Margin="20,0,0,0" Height="20" Padding="2,1,0,0"
+                       Foreground="{StaticResource TxtParamsFore}"/>
+                <TextBox x:Name="MonotonicityTxtBox" Text="0.25" Height="20" FontSize="14" Margin="20,-20,0,0" MaxLines="1" MaxLength="9"
+                     HorizontalContentAlignment="Right"
+                     CaretBrush="{StaticResource CaretBrush}" 
+                     Background="{x:Null}" 
+                     BorderBrush="{x:Null}"
+                     KeyDown="MonotonicityTxtBox_KeyDown"
+                     LostKeyboardFocus="MonotonicityTxtBox_LostKeyboardFocus"/>
+
+                <StackPanel x:Name="GridBttStack" Margin="20,5,0,0" Height="20" Orientation="Horizontal" FlowDirection="RightToLeft">
+                    <ToggleButton x:Name="RefineButton" Content="Refine" Padding="5,1" Margin="0,0,5,0" FontSize="13" Height="20" Width="55" IsEnabled="False"
+                            BorderBrush="{x:Null}"
+                            Style="{StaticResource ToggleBttWordyStartStop}" VerticalContentAlignment="Center"
+                            Click="RefineButton_Click"/>
+
+                    <Button x:Name="SurveyButton" Content="Survey" Padding="5,1" Margin="0,0,5,0" FontSize="13" Height="20" IsEnabled="False"
+                            BorderBrush="{x:Null}"
+                            Background="{StaticResource TxtParamsBack}"
+                            Foreground="{StaticResource TxtEditableFore}"
+                            Style="{StaticResource BttWordy}" VerticalContentAlignment="Center"
+                            Click="SurveyButton_Click"/>
+
+                    <RepeatButton x:Name="InitButton" Content="Initialize" Padding="5,1" FontSize="13" Height="20" Width="83" IsEnabled="False"
+                            BorderBrush="{x:Null}"
+                            Background="{StaticResource TxtParamsBack}"
+                            Foreground="{StaticResource TxtEditableFore}"
+                            Style="{DynamicResource RepeatButtonStyle1}" VerticalContentAlignment="Center"
+                            ToolTipService.InitialShowDelay="200"
+                            Delay="2000"
+                            Click="InitButton_Click"
+                            PreviewMouseLeftButtonUp="InitButton_PreviewMouseLeftButtonUp"/>
+                </StackPanel>
+            </StackPanel>
+
+
+            <!-- Grid info block -->
+            <TextBlock x:Name="InfoTxtBlock" Text="Grid info" Foreground="Gainsboro" FontSize="16" Margin="0,20,0,0"/>
 
             <TextBlock x:Name="LVoxelsTxtBlock" Text="Voxels:" FontSize="14" Margin="20,5,0,0" Height="20" Padding="2,1,0,0"
                        Foreground="{StaticResource TxtParamsFore}"
@@ -63,6 +251,17 @@
             <!-- Rendering settings block -->
             <TextBlock x:Name="RenderTxtBlock" Text="Rendering" Foreground="Gainsboro" FontSize="16" Margin="0,20,0,0"/>
 
+            <TextBlock x:Name="LGainTxtBlock" Text="Gain:" FontSize="14" Margin="20,5,0,0" Height="20" Padding="2,1,0,0"
+                       Foreground="{StaticResource TxtParamsFore}"
+                       Background="{StaticResource TxtParamsBack}"/>
+            <TextBox x:Name="GainTextBox" Text="1.0" Height="20" FontSize="14" Margin="20,-20,0,0" MaxLines="1" MaxLength="20"
+                     HorizontalContentAlignment="Right"
+                     CaretBrush="{StaticResource CaretBrush}"
+                     Background="{x:Null}" 
+                     BorderBrush="{x:Null}"
+                     KeyDown="GainTextBox_KeyDown"
+                     LostKeyboardFocus="GainTextBox_LostKeyboardFocus"/>
+
             <StackPanel x:Name="RenderBttsStack" Height="18" Margin="20,5,0,0" Orientation="Horizontal"
                         ButtonBase.Click="RenderBttsStack_Click">
                 <ToggleButton x:Name="ShowGridButton" Content="Grid" HorizontalAlignment="Left" Padding="5,1"
@@ -79,19 +278,94 @@
                         IsChecked="True" 
                         Style="{StaticResource ToggleBttWordy}"/>
 
-                <ToggleButton x:Name="ShowModelButton" Content="Model" Margin="2,0,0,0" HorizontalAlignment="Left" Padding="5,1"
+                <ToggleButton x:Name="ShowRbfButton" Content="RBF" Margin="2,0,0,0" HorizontalAlignment="Left" Padding="5,1"
                         BorderBrush="{x:Null}"
                         Background="{x:Null}"
                         Foreground="{StaticResource TxtDimBlue}"
                         IsChecked="False" 
                         Style="{StaticResource ToggleBttWordy}"/>
 
-                <ToggleButton x:Name="ShowModelGPUButton" Content="Model GPU" Margin="2,0,0,0" HorizontalAlignment="Left" Padding="5,1"
+                <ToggleButton x:Name="ShowModelButton" Content="Model" Margin="2,0,0,0" HorizontalAlignment="Left" Padding="5,1" IsEnabled="False"
                         BorderBrush="{x:Null}"
                         Background="{x:Null}"
                         Foreground="{StaticResource TxtDimBlue}"
                         IsChecked="False" 
                         Style="{StaticResource ToggleBttWordy}"/>
+
+                <ToggleButton x:Name="ShowModelRbfButton" Content="Model-RBF" Margin="2,0,0,0" HorizontalAlignment="Left" Padding="5,1" IsEnabled="False"
+                        BorderBrush="{x:Null}"
+                        Background="{x:Null}"
+                        Foreground="{StaticResource TxtDimBlue}"
+                        IsChecked="False" 
+                        Style="{StaticResource ToggleBttWordy}"/>
+            </StackPanel>
+
+            <!-- Grid info block -->
+            <TextBlock x:Name="PerformanceTxtBlock" Text="Performance" Foreground="Gainsboro" FontSize="16" Margin="0,20,0,0"/>
+
+            <TextBlock x:Name="LTrainingNumTxtBlock" Text="Training num:" FontSize="14" Margin="20,5,0,0" Height="20" Padding="2,1,0,0"
+                       Foreground="{StaticResource TxtParamsFore}"
+                       Background="{StaticResource TxtParamsBack}"/>
+            <TextBlock x:Name="TrainingNumTxtBlock" Text="0" Height="20" FontSize="14" Margin="20,-20,0,0" Padding="0,1,2,0" HorizontalAlignment="Right"
+                        Foreground="{StaticResource TxtParamsFore}"/>
+
+            <TextBlock x:Name="LTrainingRatioTxtBlock" Text="Training p+,p-:" FontSize="14" Margin="20,0,0,0" Height="20" Padding="2,1,0,0"
+                       Foreground="{StaticResource TxtParamsFore}"/>
+            <TextBlock x:Name="TrainingRatioTxtBlock" Text="_ %" Height="20" FontSize="14" Margin="20,-20,0,0" Padding="0,1,2,0" HorizontalAlignment="Right"
+                        Foreground="{StaticResource TxtParamsFore}"/>
+
+            <TextBlock x:Name="LTestNumTxtBlock" Text="Test num:" FontSize="14" Margin="20,0,0,0" Height="20" Padding="2,1,0,0"
+                       Foreground="{StaticResource TxtParamsFore}"
+                       Background="{StaticResource TxtParamsBack}"/>
+            <TextBox x:Name="TestNumTextBox" Text="0" Height="20" FontSize="14" Margin="20,-20,0,0" MaxLines="1" MaxLength="20"
+                     HorizontalContentAlignment="Right"
+                     CaretBrush="{StaticResource CaretBrush}"
+                     Background="{x:Null}" 
+                     BorderBrush="{x:Null}"
+                     KeyDown="TestNumTextBox_KeyDown"
+                     LostKeyboardFocus="TestNumTextBox_LostKeyboardFocus"/>
+
+            <TextBlock x:Name="LTestRatioTxtBlock" Text="Test p+,p-:" FontSize="14" Margin="20,0,0,0" Height="20" Padding="2,1,0,0"
+                       Foreground="{StaticResource TxtParamsFore}"/>
+            <TextBlock x:Name="TestRatioTxtBlock" Text="_ %" Height="20" FontSize="14" Margin="20,-20,0,0" Padding="0,1,2,0" HorizontalAlignment="Right"
+                        Foreground="{StaticResource TxtParamsFore}"/>
+
+            <TextBlock x:Name="LErrorInTxtBlock" Text="Error In:" FontSize="14" Margin="20,0,0,0" Height="20" Padding="2,1,0,0"
+                       Foreground="{StaticResource TxtParamsFore}"
+                       Background="{StaticResource TxtParamsBack}"/>
+            <TextBlock x:Name="ErrorInTxtBlock" Text="_ %" Height="20" FontSize="14" Margin="20,-20,0,0" Padding="0,1,2,0" HorizontalAlignment="Right"
+                        Foreground="{StaticResource TxtParamsFore}"/>
+
+            <TextBlock x:Name="LErrorOutTxtBlock" Text="Error Out:" FontSize="14" Margin="20,0,0,0" Height="20" Padding="2,1,0,0"
+                       Foreground="{StaticResource TxtParamsFore}"/>
+            <TextBlock x:Name="ErrorOutTxtBlock" Text="_ %" Height="20" FontSize="14" Margin="20,-20,0,0" Padding="0,1,2,0" HorizontalAlignment="Right"
+                        Foreground="{StaticResource TxtParamsFore}"/>
+
+            <TextBlock x:Name="LModelValueTxtBlock" Text="Model value:" FontSize="14" Margin="20,0,0,0" Height="20" Padding="2,1,0,0"
+                       Foreground="{StaticResource TxtParamsFore}"
+                       Background="{StaticResource TxtParamsBack}"/>
+            <TextBlock x:Name="ModelValueTxtBlock" Text="_ %" Height="20" FontSize="14" Margin="20,-20,0,0" Padding="0,1,2,0" HorizontalAlignment="Right"
+                        Foreground="{StaticResource TxtParamsFore}"/>
+
+            <TextBlock x:Name="LVoxelValueTxtBlock" Text="Voxel value:" FontSize="14" Margin="20,0,0,0" Height="20" Padding="2,1,0,0"
+                       Foreground="{StaticResource TxtParamsFore}"/>
+            <TextBlock x:Name="VoxelValueTxtBlock" Text="_ %" Height="20" FontSize="14" Margin="20,-20,0,0" Padding="0,1,2,0" HorizontalAlignment="Right"
+                        Foreground="{StaticResource TxtParamsFore}"/>
+
+            <StackPanel x:Name="EvaluationStack" Margin="20,5,0,0" Height="20" Orientation="Horizontal" FlowDirection="RightToLeft" IsEnabled="False">
+                <Button x:Name="ErrorInButton" Content="Err In" Padding="5,1" FontSize="13" Height="20"
+                            BorderBrush="{x:Null}"
+                            Background="{StaticResource TxtParamsBack}"
+                            Foreground="{StaticResource TxtEditableFore}"
+                            Style="{StaticResource BttWordy}" VerticalContentAlignment="Center"
+                            Click="ErrorInButton_Click"/>
+
+                <Button x:Name="ErrorOutButton" Content="Err Out" Margin="5,0,0,0" Padding="5,1" FontSize="13" Height="20"
+                            BorderBrush="{x:Null}"
+                            Background="{StaticResource TxtParamsBack}"
+                            Foreground="{StaticResource TxtEditableFore}"
+                            Style="{StaticResource BttWordy}" VerticalContentAlignment="Center"
+                            Click="ErrorOutButton_Click"/>
             </StackPanel>
         </StackPanel>
     </Grid>

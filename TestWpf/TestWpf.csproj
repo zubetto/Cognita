@@ -92,12 +92,13 @@
     </Reference>
     <Reference Include="Cognita, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\Cognita\bin\Release\Cognita.dll</HintPath>
+      <HintPath>..\Cognita\bin\Debug\Cognita.dll</HintPath>
     </Reference>
     <Reference Include="FSharp.Core">
       <HintPath>..\packages\Alea.Fody.3.0.4\FSharp.Core.dll</HintPath>
     </Reference>
-    <Reference Include="ModelFunctions">
+    <Reference Include="ModelFunctions, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
       <HintPath>..\ModelFunctions\bin\Debug\ModelFunctions.dll</HintPath>
     </Reference>
     <Reference Include="PresentationFramework.Aero2" />
@@ -123,7 +124,7 @@
     </ApplicationDefinition>
     <Page Include="Dictionary_1.xaml">
       <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
+      <Generator>XamlIntelliSenseFileGenerator</Generator>
     </Page>
     <Page Include="MainWindow.xaml">
       <Generator>MSBuild:Compile</Generator>

@@ -1,0 +1,24 @@
+RBF Aggregation as Machine Learning Technique
+
+00:00 Radial function used in this presentation is intorduced
+01:46 The aggregation process is demonstrated on linearly separable data with added noise
+08:08 The aggregation using adaptive grid is demonstrated
+09:58 Performance of the classifier is estimated on the dataset with fixed number of training points (5000 points)
+17:19 Performance of the classifier is estimated on the "inexhaustible" data source
+
+The basic concept is close to the technique of reduction of a random noise in photography (or more generally in any signal) which is to add together several noisy images obtained by photographing the same object several times. Each pixel of the result image will contain the average of all the corresponding pixels of the original images. The more original images, the more signal to noise ratio in the result pixels.
+
+Each point of a data batch is represented by the radial basis function thereby obtaining dimensionality and certain range of influence. All these RBFs is summed forming a sort of image in the sense that such representation of data points can be rasterized and saved in some spatial grid. And then such images of different data batches can be aggregated to reduce random noise in final image of entire dataset. The method is also close to the version of the k-nearest neighbors algorithm in which the distance from the test point to each of its k nearest neighbors is taken into account.
+
+9:58 Two values are used to estimate performance of the classifier.
+Error Model: mismatch of the labels assigned by the classifier with deterministic values (without noise) of the target function at the same points.
+Error Out: mismatch of the labels assigned by the classifier with labels set by the target function with added noise for the same points.
+In both cases, the points used to estimate errors are not involved in the aggregation
+
+The RBF Factor parameter plays a key role in the aggregation process. The less the factor value the more range of influence of each point. And as a result, a few points are enough for the class regions to become smooth and stable (further points will not significantly change the regions, provided the uniform distribution of points in data source). But formed this way regions are sensible to the disbalance in points number of each class. In the presented example yellow class occupies larger area than the blue class does and therefore the yellow class is represented by a larger number of points which leads to the fact that the aggregated bound of two classes is biased to the blue region relatively to the target bound.
+
+In contrast, large values of the factor lead to more irregular but less biased bounds.
+
+15:00 The density of the grid is increased to demonstrate that the "error model" value grows due to the high values of the rbf factor rather than due to quantization errors
+
+Based on the observed estimates it can be argued that for "finite" rather small datasets there is tradeoff in the choosing the factor value (bias-variance tradeoff). But for data sources which can be considered inexhaustible larger values of the rbf factor give better results. The only restrictions of using high values for the rbf factor in the last case are batch length and grid density (the higher the value of the rbf factor, the greater the grid density or the larger batch is required for the ability of the grid to capture the influence of points during aggregation)

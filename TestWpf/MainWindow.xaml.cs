@@ -55,116 +55,6 @@ using System.Windows.Shapes;
 
 namespace TestWpf
 {
-    public class ThreadPoolSettings
-    {
-        public readonly int TasksNum;
-        public readonly int ThreadsNum;
-        public readonly int TasksPerThread;
-        public readonly int addNum;
-
-        public void ResetDispenser() => counter = 0;
-
-        private int[][] tasksIndexes = null;
-
-        /// <summary>
-        /// Block-dispenser; certain number of consecutive tasks are run by one thread
-        /// </summary>
-        /// <param name="length"></param>
-        /// <returns></returns>
-        public bool DispenseNext(out int length)
-        {
-            if (counter < ThreadsNum)
-            {
-                if (counter < addNum) length = TpTPlus;
-                else length = TasksPerThread;
-
-                counter++;
-                return true;
-            }
-
-            length = 0;
-            return false;
-        }
-
-        /// <summary>
-        /// Interleaving indexes dispenser; each consecutive task is assigned to different thread
-        /// </summary>
-        /// <param name="indexes"></param>
-        /// <returns></returns>
-        public bool DispenseNext(out int[] indexes, bool andSave = true)
-        {
-            if (counter < ThreadsNum)
-            {
-                if (andSave)
-                {
-                    if (tasksIndexes[counter] != null)
-                    {
-                        indexes = tasksIndexes[counter];
-                    }
-                    else
-                    {
-                        if (counter < addNum) indexes = new int[TpTPlus];
-                        else indexes = new int[TasksPerThread];
-
-                        for (int i = counter, n = 0; i < TasksNum; i += ThreadsNum, n++)
-                        {
-                            indexes[n] = i;
-                        }
-
-                        tasksIndexes[counter] = indexes;
-                    }
-                }
-                else
-                {
-                    if (counter < addNum) indexes = new int[TpTPlus];
-                    else indexes = new int[TasksPerThread];
-
-                    for (int i = counter, n = 0; i < TasksNum; i += ThreadsNum, n++)
-                    {
-                        indexes[n] = i;
-                    }
-                }
-                
-                counter++;
-                return true;
-            }
-
-            indexes = null;
-            return false;
-        }
-
-        private int TpTPlus;
-        private int counter;
-
-        public ThreadPoolSettings(int tasksNum)
-        {
-            TasksNum = tasksNum;
-
-            ThreadPool.GetMinThreads(out ThreadsNum, out int cpThreads);
-
-            // ### TEST
-            //ThreadsNum = 1;
-
-            if (tasksNum >= ThreadsNum)
-            {
-                TasksPerThread = tasksNum / ThreadsNum;
-                addNum = tasksNum % ThreadsNum;
-            }
-            else
-            {
-                ThreadsNum = tasksNum;
-                TasksPerThread = 1;
-                addNum = 0;
-            }
-
-            if (addNum > 0) TpTPlus = TasksPerThread + 1;
-
-            tasksIndexes = new int[ThreadsNum][];
-
-            counter = 0;
-        }
-    }
-
     /// <summary>
     /// Interaction logic for MainWindow.xaml
     /// </summary>
@@ -220,8 +110,8 @@ namespace TestWpf
         private byte[] Grad5ColorsBgra;
         private double[] Grad5Offsets;
 
-        private ThreadPoolSettings TPSvoxels;
-        private ThreadPoolSettings TPSlines;
+        private TasksDispenser TPSvoxels;
+        private TasksDispenser TPSlines;
         
         public MainWindow()
         {
@@ -298,11 +188,9 @@ namespace TestWpf
             public static SolidColorBrush ForeTextReadonly;
 
             private static bool drawBackground = true;
-            private static object inst;
-            private PropertyInfo propInfo;
 
-            public static object Instance { get { return inst; } set { inst = value; } }
-            public PropertyInfo PropInfo { get { return propInfo; } set { propInfo = value; } }
+            public static object Instance { get; set; }
+            public PropertyInfo PropInfo { get; set; }
 
             public bool IsReadOnly { get; set; }
             public string Name { get; set; }
@@ -312,19 +200,19 @@ namespace TestWpf
 
             public NameValue(PropertyInfo pi)
             {
-                propInfo = pi;
+                PropInfo = pi;
                 Name = pi.Name;
 
-                IsReadOnly = !propInfo.CanWrite;
+                IsReadOnly = !PropInfo.CanWrite;
 
-                if (propInfo.CanWrite) Foreground = ForeTextRW;
+                if (PropInfo.CanWrite) Foreground = ForeTextRW;
                 else Foreground = ForeTextReadonly;
 
                 if (pi.GetIndexParameters().Length == 0)
                 {
                     if (pi.CanRead)
                     {
-                        Value = pi.GetValue(inst).ToString();
+                        Value = pi.GetValue(Instance).ToString();
                     }
                     else Value = "_";
                 }
@@ -344,7 +232,7 @@ namespace TestWpf
 
             public void SetValue(TextBox txtBox)
             {
-                if (propInfo.GetIndexParameters().Length != 0)
+                if (PropInfo.GetIndexParameters().Length != 0)
                 {
                     Value = "<indexed>";
                     return;
@@ -352,20 +240,20 @@ namespace TestWpf
 
                 Value = txtBox.Text;
 
-                if (propInfo.CanWrite)
+                if (PropInfo.CanWrite)
                 {
-                    if (propInfo.PropertyType.IsEnum)
+                    if (PropInfo.PropertyType.IsEnum)
                     {
-                        if (propInfo.PropertyType.GetEnumNames().Any(s => s == Value))
+                        if (PropInfo.PropertyType.GetEnumNames().Any(s => s == Value))
                         {
-                            propInfo.SetValue(inst, Enum.Parse(propInfo.PropertyType, Value));
+                            PropInfo.SetValue(Instance, Enum.Parse(PropInfo.PropertyType, Value));
                         }
                     }
                     else
                     {
                         try
                         {
-                            propInfo.SetValue(inst, Convert.ChangeType(Value, propInfo.PropertyType));
+                            PropInfo.SetValue(Instance, Convert.ChangeType(Value, PropInfo.PropertyType));
                         }
                         catch
                         {
@@ -374,9 +262,9 @@ namespace TestWpf
                     }
                 }
                 
-                if (propInfo.CanRead)
+                if (PropInfo.CanRead)
                 {
-                    Value = propInfo.GetValue(inst).ToString();
+                    Value = PropInfo.GetValue(Instance).ToString();
                 }
                 else Value = "_";
 
@@ -634,7 +522,7 @@ namespace TestWpf
             ModelImage.Source = signalBitmap;
 
             // Set threads
-            TPSlines = new ThreadPoolSettings(_pH);
+            TPSlines = new TasksDispenser(_pH);
         }
 
         private void IniGrid()
@@ -654,7 +542,7 @@ namespace TestWpf
             tessMultp = adaptiveGrid.TessellationMultp;
             
             // Set threads
-            TPSvoxels = new ThreadPoolSettings(adaptiveGrid.LevelsCounts[0]);
+            TPSvoxels = new TasksDispenser(adaptiveGrid.LevelsCounts[0]);
             
             // Ini drawings
             DrawRootGrid();
@@ -1135,10 +1023,11 @@ namespace TestWpf
                     int rowStart = segment.Item1;
                     int rowNum = segment.Item2;
 
+                    byte[] pixel = new byte[4];
+                    double[] point = new double[2];
+
                     for (int row = rowStart; row < rowNum; row++)
                     {
-                        byte[] pixel = new byte[4];
-                        double[] point = new double[2];
                         int start = row * rowStride;
                         int stop = start + rowStride;
 
@@ -1339,24 +1228,16 @@ namespace TestWpf
 
         private bool ThresholdExceeded(IVoxel voxel, double threshold)
         {
-            double min = double.NegativeInfinity;
-            double max = double.PositiveInfinity;
-            double mean = 0.0;
+            double min = voxelArray[voxel.ContentSI].Data;
+            double max = min;
+            double mean = min;
 
-            bool notInit = true;
-
-            for (int serial = voxel.ContentSI, stop = serial + tessMultp; serial < stop; serial++)
+            for (int serial = voxel.ContentSI + 1, stop = voxel.ContentSI + tessMultp; serial < stop; serial++)
             {
                 double val = voxelArray[serial].Data;
                 
                 if (val < min) min = val;
                 else if (val > max) max = val;
-                else if (notInit)
-                {
-                    notInit = false;
-                    min = val;
-                    max = val;
-                }
 
                 mean += val;
             }
@@ -1458,6 +1339,11 @@ namespace TestWpf
 
         private void RefineGrid(double threshold, Updater callback = null, bool block = false)
         {
+            // During the merge pass all merged voxel are set the state to false and
+            // therefore will be ignored during the tessellation pass;
+            // The new voxels caused by tessellation should have state equal to true
+            adaptiveGrid.ProcessedState = false;
+
             int rootNum = adaptiveGrid.LevelsCounts[0];
             int level = -1;
 
@@ -1473,13 +1359,19 @@ namespace TestWpf
                 {
                     if (voxel.SetContent(true, VoxelFunc))
                     {
-                        if (!ThresholdExceeded(voxel, threshold)) voxel.Merge(true, iniValue: voxel.Data);
+                        if (!ThresholdExceeded(voxel, threshold))
+                        {
+                            voxel.Merge(true, iniValue: voxel.Data);
+                            voxel.State = false;
+                        }
+                        else voxel.State = true;
                     }
+                    else voxel.State = true;
                 }
                 while (adaptiveGrid.NextAtLevel(ref voxel));
             }
 
-            // --- Tessellation-pass-----------------------------------------------------
+            // --- Tessellation-pass -----------------------------------------------------
             level = -1;
 
             // level-loop
@@ -1493,9 +1385,10 @@ namespace TestWpf
                 // traversal all voxels at the current level
                 do
                 {
-                    if (voxel.Tessellate(true, VoxelFunc))
+                    if (voxel.State && voxel.Tessellate(true, VoxelFunc))
                     {
-                        if (!ThresholdExceeded(voxel, threshold)) voxel.Merge(true, iniValue: voxel.Data);
+                        if (!ThresholdExceeded(voxel, threshold))
+                            voxel.Merge(true, iniValue: voxel.Data);
                     }
                 }
                 while (adaptiveGrid.NextAtLevel(ref voxel));
@@ -1520,7 +1413,12 @@ namespace TestWpf
 
             IsParallelComplete = false;
             int IsRefiningComplete = 0;
-            
+
+            // During the merge pass all merged voxel are set the state to false and
+            // therefore will be ignored during the tessellation pass;
+            // The new voxels caused by tessellation should have state equal to true
+            adaptiveGrid.ProcessedState = false;
+
             int numIn = TPSvoxels.ThreadsNum;
             int numOut = TPSvoxels.ThreadsNum;
 
@@ -1565,8 +1463,13 @@ namespace TestWpf
                                     voxel.SetContent(true, VoxelFunc);
 
                                     if (!ThresholdExceeded(voxel, threshold))
+                                    {
                                         voxel.Merge(true, iniValue: voxel.Data);
+                                        voxel.State = false;
+                                    }
+                                    else voxel.State = true;
                                 }
+                                else voxel.State = true;
                             }
                             while (adaptiveGrid.NextAtLevel(i, ref voxel));
                         }
@@ -1607,7 +1510,7 @@ namespace TestWpf
                             // traversal all voxels at the current level
                             do
                             {
-                                if (!voxel.Tessellate(true, VoxelFunc)) continue;
+                                if (!voxel.State || !voxel.Tessellate(true, VoxelFunc)) continue;
 
                                 if (!ThresholdExceeded(voxel, threshold))
                                     voxel.Merge(true, iniValue: voxel.Data);
@@ -1677,6 +1580,11 @@ namespace TestWpf
             IsParallelComplete = false;
             int IsRefiningComplete = 0;
 
+            // During the merge pass all merged voxel are set the state to false and
+            // therefore will be ignored during the tessellation pass;
+            // The new voxels caused by tessellation should have state equal to true
+            adaptiveGrid.ProcessedState = false;
+
             int numIn = TPSvoxels.ThreadsNum;
             int numOut = TPSvoxels.ThreadsNum;
 
@@ -1714,8 +1622,13 @@ namespace TestWpf
                                     voxel.SetContent(true, VoxelFunc);
 
                                     if (!ThresholdExceeded(voxel, threshold))
+                                    {
                                         voxel.Merge(true, iniValue: voxel.Data);
+                                        voxel.State = false;
+                                    }
+                                    else voxel.State = true;
                                 }
+                                else voxel.State = true;
                             }
                             while (adaptiveGrid.NextAtLevel(rootInd[i], ref voxel));
                         }
@@ -1756,7 +1669,7 @@ namespace TestWpf
                             // traversal all voxels at the current level
                             do
                             {
-                                if (!voxel.Tessellate(true, VoxelFunc)) continue;
+                                if (!voxel.State || !voxel.Tessellate(true, VoxelFunc)) continue;
 
                                 if (!ThresholdExceeded(voxel, threshold))
                                     voxel.Merge(true, iniValue: voxel.Data);
@@ -1827,7 +1740,12 @@ namespace TestWpf
 
             IsParallelComplete = false;
             int IsRefiningComplete = 0;
-            
+
+            // During the merge pass all merged voxel are set the state to false and
+            // therefore will be ignored during the tessellation pass;
+            // The new voxels caused by tessellation should have state equal to true
+            adaptiveGrid.ProcessedState = false;
+
             int numIn = TPSvoxels.ThreadsNum;
             int numOut = TPSvoxels.ThreadsNum;
 
@@ -1871,8 +1789,13 @@ namespace TestWpf
                                 voxel.SetContent(true, VoxelFunc);
 
                                 if (!ThresholdExceeded(voxel, threshold))
+                                {
                                     voxel.Merge(true, iniValue: voxel.Data);
+                                    voxel.State = false;
+                                }
+                                else voxel.State = true;
                             }
+                            else voxel.State = true;
                         }
 
                         // --- sync-point: next level ---
@@ -1937,7 +1860,7 @@ namespace TestWpf
                                     sharedVoxel = null;
                             }
 
-                            if (!voxel.Tessellate(true, VoxelFunc)) continue;
+                            if (!voxel.State || !voxel.Tessellate(true, VoxelFunc)) continue;
 
                             if (!ThresholdExceeded(voxel, threshold))
                                 voxel.Merge(true, iniValue: voxel.Data);
@@ -2064,7 +1987,10 @@ namespace TestWpf
                             if (!voxel.SetContent(false, VoxelFunc)) continue;
 
                             if (!ThresholdExceeded(voxel, threshold))
+                            {
                                 voxel.Merge(true, iniValue: voxel.Data);
+                                voxel.State = true; // to ignore merged voxels during the tess-pass
+                            }
                         }
                         while (adaptiveGrid.NextAtLevel(ref voxel));
 
@@ -2203,6 +2129,11 @@ namespace TestWpf
             IsParallelComplete = false;
             int IsRefiningComplete = 0;
 
+            // During the merge pass all merged voxel are set the state to false and
+            // therefore will be ignored during the tessellation pass;
+            // The new voxels caused by tessellation should have state equal to true
+            adaptiveGrid.ProcessedState = false; 
+
             int numIn = TPSvoxels.ThreadsNum;
             int numOut = TPSvoxels.ThreadsNum;
 
@@ -2260,8 +2191,13 @@ namespace TestWpf
                             if (voxel.SetContent(true, VoxelFunc))
                             {
                                 if (!ThresholdExceeded(voxel, threshold))
+                                {
                                     voxel.Merge(true, iniValue: voxel.Data);
+                                    voxel.State = false;
+                                }
+                                else voxel.State = true;
                             }
+                            else voxel.State = true;
 
                             if (--i > 0)
                             {
@@ -2305,7 +2241,6 @@ namespace TestWpf
                     if (Interlocked.Decrement(ref numIn) == 0)
                     {
                         adaptiveGrid.FirstAtLevel(0, out startVoxel);
-                        adaptiveGrid.ProcessedState = true;
 
                         numIn = TPSvoxels.ThreadsNum;
                         RelayIN.Reset();
@@ -2342,7 +2277,7 @@ namespace TestWpf
 
                         while (go)
                         {
-                            if (voxel.Tessellate(true, VoxelFunc))
+                            if (voxel.State && voxel.Tessellate(true, VoxelFunc))
                             {
                                 if (!ThresholdExceeded(voxel, threshold))
                                     voxel.Merge(true, iniValue: voxel.Data);
@@ -2477,7 +2412,7 @@ namespace TestWpf
             FPSTxtBlock.Text = string.Format("{0,4:N0}, {1,4:N0} avg", fps, fpsAvg);
             SimTxtBlock.Text = timeAdvModel == 0 ? "<1" : timeAdvModel.ToString();
             RefineTxtBlock.Text = string.Format("{0,4:N0}, {1,4:N0} avg", timeRefine, timeRefineAvg);
-            DrawGridVoxsTxtBlock.Text = string.Format("{0,4:N0}, {1,4:N0}", timeDrawGrid, timeDrawVoxs);
+            DrawGridVoxsTxtBlock.Text = string.Format("{0,4:N0}, {1,4:N0}", timeDrawGrid, timeDrawVoxsModel);
 
             // output simulation time
             ModelTimeTxtBlock.Text = TimeSpan.FromMilliseconds(Model.Time).ToString("c");
@@ -2558,7 +2493,7 @@ namespace TestWpf
 
                 // ### Diagnostic
                 funcTimer.Stop();
-                timeDrawVoxs = funcTimer.ElapsedMilliseconds;
+                timeDrawVoxsModel = funcTimer.ElapsedMilliseconds;
             }
             else if (ShowModelButton.IsChecked == true && (gi & GItems.Model) == GItems.Model)
             {
@@ -2569,7 +2504,7 @@ namespace TestWpf
 
                 // ### Diagnostic
                 funcTimer.Stop();
-                timeDrawVoxs = funcTimer.ElapsedMilliseconds;
+                timeDrawVoxsModel = funcTimer.ElapsedMilliseconds;
             }
             else if (ShowModelGPUButton.IsChecked == true && (gi & GItems.ModelGPU) == GItems.ModelGPU)
             {
@@ -2584,16 +2519,16 @@ namespace TestWpf
 
                 // ### Diagnostic
                 funcTimer.Stop();
-                timeDrawVoxs = funcTimer.ElapsedMilliseconds;
+                timeDrawVoxsModel = funcTimer.ElapsedMilliseconds;
             }
-            else timeDrawVoxs = 0;
+            else timeDrawVoxsModel = 0;
         }
         
         private Stopwatch frameTimer = new Stopwatch();
         private Stopwatch funcTimer = new Stopwatch();
 
         private const long InfoFreshPeriod = 250;
-        private long timeRefine, timeDrawGrid, timeDrawVoxs, timeAdvModel, fps;
+        private long timeRefine, timeDrawGrid, timeDrawVoxsModel, timeAdvModel, fps;
         private long avgCounter, updateCounter;
         private double timeRefineAvg, fpsAvg;
 

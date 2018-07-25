@@ -8,7 +8,321 @@ namespace Cognita
 {
     public static class MathX
     {
+        public struct Hyperplane
+        {
+            public double[] Point;
+            public double[] Normal;
+            public double Distance;
+        }
+
+        public struct Hyperrect
+        {
+            public double[] PointA;
+            public double[] PointB;
+        }
+
         public static readonly double sqrt2 = Math.Sqrt(2);
+        
+        public static readonly Random Rnd = new Random();
+
+        /// <summary>
+        /// Sets random hyperplane which has points in the given region
+        /// </summary>
+        /// <param name="region"></param>
+        /// <param name="hplane"></param>
+        public static void SetRandPlane(Hyperrect region, ref Hyperplane hplane)
+        {
+            hplane.Point.SetRandom(region);
+            hplane.Normal.SetRandom(-1.0, 1.0);
+            hplane.Normal.Multiply(1.0 / Math.Sqrt(hplane.Normal.SquaredNorm()));
+            hplane.Distance = hplane.Point.DotProduct(hplane.Normal);
+        }
+
+        public static double LogisticFunction(double x)
+        {
+            return 1.0 / (1.0 + Math.Exp(x));
+        }
+
+        public static double DotProduct(this double[] r, double[] q)
+        {
+            double rq = 0.0;
+
+            for (int i = 0; i < r.Length; i++)
+            {
+                rq += r[i] * q[i];
+            }
+
+            return rq;
+        }
+
+        public static double DotProduct(this int[] r, double[] q)
+        {
+            double rq = 0.0;
+
+            for (int i = 0; i < r.Length; i++)
+            {
+                rq += r[i] * q[i];
+            }
+
+            return rq;
+        }
+
+        public static int[][] OuterProduct(this int[] r, int[] q)
+        {
+            int[][] prod = new int[r.Length][];
+
+            for (int i = 0; i < r.Length; ++i)
+            {
+                int[] row = new int[q.Length];
+                prod[i] = row;
+
+                for (int j = 0, ri = r[i]; j < q.Length; ++j)
+                    row[j] = ri * q[j];
+            }
+
+            return prod;
+        }
+
+        public static void OuterProduct(this int[] r, int[] q, int[][] result)
+        {
+            for (int i = 0; i < r.Length; ++i)
+            {
+                int[] row = result[i];
+
+                for (int j = 0, ri = r[i]; j < q.Length; ++j)
+                    row[j] = ri * q[j];
+            }
+        }
+
+        public static void OuterProduct(this double[] r, double[] q, double[][] result)
+        {
+            for (int i = 0; i < r.Length; ++i)
+            {
+                double[] row = result[i];
+                double ri = r[i];
+
+                for (int j = 0; j < q.Length; ++j)
+                    row[j] = ri * q[j];
+            }
+        }
+
+        public static void OuterProduct(this double[] r, double[] q, double[,] result)
+        {
+            for (int i = 0; i < r.Length; ++i)
+            {
+                double ri = r[i];
+
+                for (int j = 0; j < q.Length; ++j)
+                    result[i, j] = ri * q[j];
+            }
+        }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
+        public static void Average(this int[] input, double[] output)
+        {
+            if (output.Length >= input.Length)
+                throw new ArgumentOutOfRangeException("output", "The length of the output should be less than length of the input");
+
+            int batchLen = Math.DivRem(input.Length, output.Length, out int plusNum);
+            int batchPlusLen = batchLen + 1;
+
+            int start = 0;
+            int stop = batchPlusLen;
+
+            for (int j = 0; j < plusNum; ++j, start += batchPlusLen, stop += batchPlusLen)
+            {
+                int sum = 0;
+
+                for (int i = start, iStop = stop; i < iStop; ++i)
+                    sum += input[i];
+
+                output[j] = sum;
+                output[j] /= batchPlusLen;
+            }
+
+            stop = start + batchLen;
+
+            for (int j = plusNum; j < output.Length; ++j, start += batchLen, stop += batchLen)
+            {
+                int sum = 0;
+
+                for (int i = start, iStop = stop; i < iStop; ++i)
+                    sum += input[i];
+
+                output[j] = sum;
+                output[j] /= batchLen;
+            }
+        }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="ro"></param>
+        /// <param name="index"></param>
+        /// <returns></returns>
+        public static double Min(this double[] ro, out int index)
+        {
+            index = -1;
+            double min = double.PositiveInfinity;
+
+            for (int i = 0; i < ro.Length; ++i)
+            {
+                double ri = ro[i];
+
+                if (ri < min)
+                {
+                    min = ri;
+                    index = i;
+                }
+            }
+
+            return min;
+        }
+
+        /// <summary>
+        /// Maps all components of this vector to the interval [0, 1]
+        /// </summary>
+        /// <param name="ro"></param>
+        /// <param name="origin"></param>
+        /// <param name="range"></param>
+        public static void NormalizeComponents(this double[] ro, double[] origin, double[] range)
+        {
+            for (int i = 0; i < ro.Length; i++)
+            {
+                ro[i] -= origin[i];
+                ro[i] /= range[i];
+            }
+        }
+
+        /// <summary>
+        /// Sets each component of this vector to a random value from limA to limB
+        /// </summary>
+        /// <param name="ro"></param>
+        /// <param name="limA"></param>
+        /// <param name="limB"></param>
+        public static void SetRandom(this double[] ro, double limA = 0.0, double limB = 1.0)
+        {
+            double delta = limB - limA;
+
+            for (int i = 0; i < ro.Length; i++)
+            {
+                ro[i] = limA + delta * Rnd.NextDouble();
+            }
+        }
+
+        /// <summary>
+        /// Sets each component of this vector to a random value from limA to limA + range
+        /// </summary>
+        /// <param name="ro"></param>
+        /// <param name="limA"></param>
+        /// <param name="range"></param>
+        public static void SetRandom(this double[] ro, double[] limA, double[] range)
+        {
+            for (int i = 0; i < ro.Length; i++)
+            {
+                ro[i] = limA[i] + range[i] * Rnd.NextDouble();
+            }
+        }
+
+        /// <summary>
+        /// Sets each component of this vector to a random value within the region
+        /// </summary>
+        /// <param name="ro"></param>
+        /// <param name="limA"></param>
+        /// <param name="range"></param>
+        public static void SetRandom(this double[] ro, Hyperrect region)
+        {
+            for (int i = 0; i < ro.Length; i++)
+            {
+                ro[i] = region.PointA[i] + (region.PointB[i] - region.PointA[i]) * Rnd.NextDouble();
+            }
+        }
+
+        /// <summary>
+        /// Multiplies this vector by the given scalar and stores the result in this vector
+        /// </summary>
+        /// <param name="ro"></param>
+        /// <param name="scalar"></param>
+        public static void Multiply(this double[] ro, double scalar)
+        {
+            for (int i = 0; i < ro.Length; i++)
+            {
+                ro[i] *= scalar;
+            }
+        }
+
+        /// <summary>
+        /// Multiplies components of this vector by the given weights and stores the result in the result 
+        /// </summary>
+        /// <param name="ro"></param>
+        /// <param name="weights"></param>
+        /// <param name="result"></param>
+        public static void Multiply(this int[] ro, double[] weights, double[] result)
+        {
+            for (int i = 0; i < ro.Length; i++)
+            {
+                result[i] = ro[i] * weights[i];
+            }
+        }
+
+        /// <summary>
+        /// Adds the vector r to this vector and stores the result in this vector
+        /// </summary>
+        /// <param name="ro"></param>
+        /// <param name="r"></param>
+        public static void Add(this double[] ro, double[] r)
+        {
+            for (int i = 0; i < ro.Length; i++)
+            {
+                ro[i] += r[i];
+            }
+        }
+
+        /// <summary>
+        /// Subtracts the vector r from this vector and stores the result in this vector
+        /// </summary>
+        /// <param name="ro"></param>
+        /// <param name="r"></param>
+        public static void Subtract(this double[] ro, double[] r)
+        {
+            for (int i = 0; i < ro.Length; i++)
+            {
+                ro[i] -= r[i];
+            }
+        }
+
+        /// <summary>
+        /// Subtracts the vector r from this vector and stores result in the resuslt
+        /// </summary>
+        /// <param name="ro"></param>
+        /// <param name="r"></param>
+        public static void Subtract(this double[] ro, double[] r, double[] result)
+        {
+            for (int i = 0; i < ro.Length; i++)
+            {
+                result[i] = ro[i] - r[i];
+            }
+        }
+
+        /// <summary>
+        /// Multiplies this vector by the given scalar, adds the r
+        /// and stores the result in this vector
+        /// </summary>
+        /// <param name="ro"></param>
+        /// <param name="scalar"></param>
+        /// <param name="r"></param>
+        public static void MultiplyAndAdd(this double[] ro, double scalar, double[] r)
+        {
+            for (int i = 0; i < ro.Length; i++)
+            {
+                ro[i] *= scalar;
+                ro[i] += r[i];
+            }
+        }
 
         /// <summary>
         /// Calculates vector increment from this vector to the given vector r
@@ -75,6 +389,16 @@ namespace Cognita
             double norm = 0;
 
             foreach (double x in r)
+                norm += x * x;
+
+            return norm;
+        }
+
+        public static double SquaredNorm(this int[] r)
+        {
+            double norm = 0;
+
+            foreach (int x in r)
                 norm += x * x;
 
             return norm;

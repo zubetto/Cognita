@@ -32,6 +32,7 @@
     <DefineConstants>TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
+    <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug_ref|AnyCPU'">
     <DebugSymbols>true</DebugSymbols>
@@ -44,8 +45,25 @@
     <Prefer32Bit>true</Prefer32Bit>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="Cognita">
+    <Reference Include="Alea">
+      <HintPath>..\packages\Alea.Fody.3.0.4\Alea.dll</HintPath>
+    </Reference>
+    <Reference Include="Alea.CUDA.CT.LibDevice">
+      <HintPath>..\packages\Alea.3.0.4\tools\Alea.CUDA.CT.LibDevice.dll</HintPath>
+    </Reference>
+    <Reference Include="Alea.CUDA.CT.Native.X86.B64.Windows">
+      <HintPath>..\packages\Alea.3.0.4\tools\Alea.CUDA.CT.Native.X86.B64.Windows.dll</HintPath>
+    </Reference>
+    <Reference Include="Cognita, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
       <HintPath>..\Cognita\bin\Release\Cognita.dll</HintPath>
+    </Reference>
+    <Reference Include="FSharp.Core">
+      <HintPath>..\packages\Alea.Fody.3.0.4\FSharp.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="ModelFunctions, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\ModelFunctions\bin\Release\ModelFunctions.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Data" />
@@ -68,8 +86,8 @@
       <SubType>Designer</SubType>
     </ApplicationDefinition>
     <Page Include="Dictionary_1.xaml">
-      <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
+      <Generator>XamlIntelliSenseFileGenerator</Generator>
     </Page>
     <Page Include="MainWindow.xaml">
       <Generator>MSBuild:Compile</Generator>

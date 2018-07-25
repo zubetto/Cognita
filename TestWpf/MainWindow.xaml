@@ -112,7 +112,7 @@
                      Background="{x:Null}" 
                      BorderBrush="{x:Null}" 
                      LostKeyboardFocus="ThresholdTxtBox_LostKeyFocus"
-                     KeyDown="TessNumTxtBox_KeyDown"/>
+                     KeyDown="ThresholdTxtBox_KeyDown"/>
             </StackPanel>
             
 
@@ -227,11 +227,13 @@
 
 
 
-            <Button x:Name="RefineButton" Content="Refine Grid" BorderBrush="{x:Null}" Margin="0,25,0,0"
-                    Click="RefineButton_Click" Width="141" HorizontalAlignment="Left" Height="18"/>
+            <Button x:Name="RefineButton" Content="Refine Grid" Margin="0,25,0,0"
+                    Click="RefineButton_Click" Width="141" HorizontalAlignment="Left" Height="18" 
+                    BorderBrush="{x:Null}"/>
 
-            <Button x:Name="ResetButton" Content="Reset Grid" BorderBrush="{x:Null}" Margin="142,-18,0,0"
-                    Click="ResetButton_Click" HorizontalAlignment="Left" Width="140" Height="18"/>
+            <Button x:Name="ResetButton" Content="Reset Grid" Margin="142,-18,0,0"
+                    Click="ResetButton_Click" HorizontalAlignment="Left" Width="140" Height="18"
+                    BorderBrush="{x:Null}"/>
 
 
             <!-- Model info block -->

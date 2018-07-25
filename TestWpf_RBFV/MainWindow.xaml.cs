@@ -1,9 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
+using IOPath = System.IO.Path;
 using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -16,8 +18,10 @@ using System.Windows.Navigation;
 using System.Windows.Shapes;
 
 using Cognita;
+using Cognita.SupervisedLearning;
 using IVoxel = Cognita.AdaptiveGrid<double>.IVoxel;
 using RBF = Cognita.SupervisedLearning.RadialBasisFunction;
+using ModelFunctions;
 
 namespace TestWpf_RBFV
 {
@@ -33,17 +37,21 @@ namespace TestWpf_RBFV
         private double[] SpaceDim = new double[4] { 0.0, 0.0, 1.0, 1.0 }; // {X0, Y0, Xmax, Ymax}
         private int[] rootGridShape = new int[4] { 3, 3, 960, 960 };
         private int[] tessFactors = new int[2] { 2, 2 };
+        private double spaceDiagonal;
 
         private AdaptiveGrid<double> adaptiveGrid;
         private IList<IVoxel> voxelArray;
         private int tessMultp;
-        private int tessNum = 3000;
+        private int tessNum = 1000;
 
         private static Matrix ModelToCanvas = Matrix.Identity;
         private static Matrix CanvasToModel = Matrix.Identity;
 
         private static readonly PixelFormat _pF = PixelFormats.Pbgra32;
         public const int BYTESPP = 4;
+        public const int BITMAPWF = 32;
+        public const int BITMAPHF = 32;
+        public const int TILEMIN = 10;
 
         private int pixel_4B;
         private byte[] pixelTmp1;
@@ -55,35 +63,88 @@ namespace TestWpf_RBFV
         private Color colorLimpid;
         private Color[] orderedGradColors;
         private double[] orderedGradOffsets;
+        private double outputGain = 1.0;
 
-        private WriteableBitmap gridBitmap;
-        private WriteableBitmap signalBitmap;
+        private WriteableBitmap gridBitmap; // only grid lines
+        private WriteableBitmap signalBitmap; // voxelizer, rbf-voxels, model
+        private WriteableBitmap modelRbfBitmap; // only model-rbf
         private byte[] gridPixelArray;
         private byte[] modelPixelArray;
         private int rowStride;
         private double[] placementTmp = new double[4]; // { pointX, pointY, stepX, stepY }
         private double[] vectorTmp = new double[2]; // { pointX, pointY }
 
+        private TasksDispenser TPSlines;
+
+        private RadialFunction usedRbf;
+        private double noiseFactor = 0.01;
+
+        public double NoiseFactor { get { return noiseFactor; } set { if (value >= 0.0) noiseFactor = value; } }
+
+        private int batchLength = 100;
+        private double batchRatio = 1.0;
+
+        private double[][] rbfPoints = new double[1][] { new double[2] };
+        private bool[] rbfLabels = new bool[1];
+
+        private bool isModelRbfFresh = false;
+
+        private IModel model;
+        private IPointsSource dataSource;
+        
+        private RBFVoxelizer voxelizer;
+        private double threshold = 0.005;
+        private double monotonicTol = double.NegativeInfinity;
+
+        private int trainingNum;
+        private int testNum;
+
+        SolidColorBrush txtEditableFore;
+        SolidColorBrush txtRedFore;
+
         public MainWindow()
         {
             InitializeComponent();
             Loaded += SetDPI;
 
+            // --- nset static rbf -------------------
+            double dx = SpaceDim[2] - SpaceDim[0];
+            double dy = SpaceDim[3] - SpaceDim[1];
+
+            dx *= dx;
+            dy *= dy;
+
+            spaceDiagonal = Math.Sqrt(dx + dy);
+
+            RBF.Amplitude = 1.0;
+            RBF.Factor = 25;
+            RBF.Exponent = 1.0;
+            RBF.CalcRanges(threshold, spaceDiagonal, 1.0);
+
             // store values specified in designer
             _addW = Width - MainCanvas.Width;
             _addH = Height - MainCanvas.Height;
             _minH = Height;
-
-            // set the model
+            
+            // set model list
+            ModelList.ItemsSource = Enum.GetValues(typeof(Models));
+            ModelList.SelectedIndex = 1;
+            ModelList.SelectionChanged += SetModel;
             SetModel();
 
             // ini settings-block text
             tessNum *= rootGridShape[0] * rootGridShape[1];
 
-            //RootShapeTxtBox.Text = ArrayToString(rootGridShape);
-            //TessShapeTxtBox.Text = ArrayToString(tessFactors);
-            //TessNumTxtBox.Text = tessNum.ToString();
-            //ThresholdTxtBox.Text = refinerThold.ToString();
+            RootShapeTxtBox.Text = ArrayToString(rootGridShape);
+            TessShapeTxtBox.Text = ArrayToString(tessFactors);
+            TessNumTxtBox.Text = tessNum.ToString();
+            ThresholdTxtBox.Text = threshold.ToString();
+            DetailsFactorTxtBox.Text = batchRatio.ToString();
+            MonotonicityTxtBox.Text = double.IsInfinity(monotonicTol) ? "infinity" : monotonicTol.ToString();
+
+            // ini brushes
+            txtEditableFore = FindResource("TxtEditableFore") as SolidColorBrush;
+            txtRedFore = FindResource("TxtRedFore") as SolidColorBrush;
         }
 
         private void SetDPI(object sender, RoutedEventArgs e)
@@ -117,20 +178,223 @@ namespace TestWpf_RBFV
             UpdateInfo();
         }
 
+        private string[] GetFilenames(string filter)
+        {
+            string[] filenames = null;
+
+            Microsoft.Win32.OpenFileDialog dlgOpenFile = new Microsoft.Win32.OpenFileDialog
+            {
+                Multiselect = true,
+                Filter = filter,
+                RestoreDirectory = true
+            };
+
+            try
+            {
+                if (dlgOpenFile.ShowDialog() == true)
+                    filenames = dlgOpenFile.FileNames;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, "Unexpected error", MessageBoxButton.OK, MessageBoxImage.Exclamation);
+            }
+
+            return filenames;
+        }
+
+        public enum Models { None, Linear2D, Wave2D, WaveHF2D, PostalZips }
+
         private void SetModel()
         {
-            double dx = SpaceDim[2] - SpaceDim[0];
-            double dy = SpaceDim[3] - SpaceDim[1];
+            // --- Set DataModel --------------------------------------
+            var region = new MathX.Hyperrect()
+            {
+                PointA = new double[2] { SpaceDim[0], SpaceDim[1] },
+                PointB = new double[2] { SpaceDim[2], SpaceDim[3] }
+            };
 
-            dx *= dx;
-            dy *= dy;
+            Models selected = (Models)ModelList.SelectedIndex;
+            bool errFlag = false;
 
-            double dr = Math.Sqrt(dx + dy);
+            switch (selected)
+            {
+                case Models.Linear2D:
+                    var linearModel = new LinearModel2D(region, 1.0 / noiseFactor);
 
-            RBF.Amplitude = 1.0;
-            RBF.Factor = 33.0;
-            RBF.Exponent = 1;
-            RBF.CalcRanges(0.01, dr, 1.0);
+                    model = linearModel;
+                    dataSource = linearModel;
+                    
+                    break;
+
+                case Models.Wave2D:
+                    var waveModel = new Wave2D(region, 1.0 / noiseFactor);
+
+                    model = waveModel;
+                    dataSource = waveModel;
+
+                    break;
+
+                case Models.WaveHF2D:
+                    waveModel = new Wave2D(region, 1.0 / noiseFactor, 15);
+
+                    model = waveModel;
+                    dataSource = waveModel;
+
+                    break;
+
+                case Models.PostalZips:
+                    string filter = "CSV Data and Config|*.csv;*.dcfg";
+                    string configFile = null;
+                    string dataFile = null;
+
+                    string[] filenames = GetFilenames(filter);
+
+                    if (filenames == null || filenames.Length != 2)
+                    {
+                        errFlag = true;
+                    }
+                    else if (IOPath.GetExtension(filenames[0]) == ".csv")
+                    {
+                        dataFile = filenames[0];
+
+                        if (IOPath.GetExtension(filenames[1]) == ".dcfg")
+                            configFile = filenames[1];
+                        else
+                            errFlag = true;
+                    }
+                    else if (IOPath.GetExtension(filenames[1]) == ".csv")
+                    {
+                        dataFile = filenames[1];
+
+                        if (IOPath.GetExtension(filenames[0]) == ".dcfg")
+                            configFile = filenames[0];
+                        else
+                            errFlag = true;
+                    }
+                    else errFlag = true;
+
+                    if (!errFlag)
+                    {
+                        try
+                        {
+                            var zipCodes = new PostalServiceZipCode(configFile, dataFile);
+
+                            model = null;
+                            dataSource = zipCodes;
+                        }
+                        catch (Exception ex)
+                        {
+                            errFlag = true;
+                            MessageBox.Show(ex.ToString(), "Error during loading", MessageBoxButton.OK, MessageBoxImage.Exclamation);
+                        }
+                    }
+                    else
+                    {
+                        MessageBox.Show("Invalid couple of data and config were provided", 
+                                        "Filenames error", MessageBoxButton.OK, MessageBoxImage.Exclamation);
+                    }
+
+                    break;
+
+                default:
+                    model = null;
+                    dataSource = null;
+
+                    DataBttStack.IsEnabled = false;
+
+                    break;
+            }
+
+            if (!errFlag && selected != Models.None)
+            {
+                DataBttStack.IsEnabled = true;
+                PreviewNextButton.IsEnabled = true;
+                PreviewButton.IsEnabled = false;
+            }
+            else
+            {
+                model = null;
+                dataSource = null;
+
+                DataBttStack.IsEnabled = false;
+            }
+
+            if (model == null)
+            {
+                ShowModelButton.IsChecked = false;
+                ShowModelButton.IsEnabled = false;
+
+                ErrorInButton.Content = "Err In";
+                LErrorInTxtBlock.Text = "Error In:";
+            }
+            else
+            {
+                ShowModelButton.IsEnabled = true;
+
+                UpdateGI(GItems.Model);
+
+                ErrorInButton.Content = "Err Model";
+                LErrorInTxtBlock.Text = "Error Model:";
+            }
+
+            if (dataSource == null)
+            {
+                ShowModelRbfButton.IsChecked = false;
+                ShowModelRbfButton.IsEnabled = false;
+            }
+            else
+            {
+                ShowModelRbfButton.IsEnabled = true;
+            }
+
+            InitButton.IsEnabled = false;
+        }
+
+        private void SetModel(object sender, SelectionChangedEventArgs e)
+        {
+            SetModel();
+            SetModelToCanvasTransform(true);
+        }
+
+        private void SetVoxelizer()
+        {
+            usedRbf = new RadialFunction();
+
+            int rootTile = rootGridShape[0];
+            int levelTile = tessFactors[0];
+
+            rootGridShape[1] = rootTile;
+            tessFactors[1] = levelTile;
+
+            voxelizer = new RBFVoxelizer(dataSource, usedRbf, tessNum, rootTile, levelTile);
+            voxelizer.SyncEvent += UpdateGrid;
+            voxelizer.CompletionEvent += CompletionHandler;
+        }
+
+        private void GetNextDataBatch()
+        {
+            if (dataSource == null) return;
+
+            dataSource.BatchLength = batchLength;
+
+            if (!dataSource.GetNextNorm(DataSet.Training, ref rbfPoints, ref rbfLabels))
+            {
+                dataSource.SeekNext(DataSet.Training, 0);
+                dataSource.GetNextNorm(DataSet.Training, ref rbfPoints, ref rbfLabels);
+            }
+
+            batchLength = dataSource.BatchLength;
+        }
+
+        private void GetCurrentDataBatch()
+        {
+            if (dataSource == null) return;
+
+            dataSource.BatchLength = batchLength;
+
+            dataSource.GetCurrentNorm(DataSet.Training, ref rbfPoints, ref rbfLabels);
+
+            batchLength = dataSource.BatchLength;
         }
 
         private void SetModelToCanvasTransform(bool fit)
@@ -257,6 +521,7 @@ namespace TestWpf_RBFV
 
             // hide template controls
             GradientRect.Visibility = Visibility.Collapsed;
+            PointerRect.Visibility = Visibility.Collapsed;
         }
 
         private void IniBitmaps()
@@ -273,31 +538,47 @@ namespace TestWpf_RBFV
 
             gridBitmap = new WriteableBitmap(_pW, _pH, 96, 96, _pF, null);
             signalBitmap = new WriteableBitmap(_pW, _pH, 96, 96, _pF, null);
+            modelRbfBitmap = new WriteableBitmap(_pW, _pH, 96, 96, _pF, null);
 
             GridImage.Source = gridBitmap;
             ModelImage.Source = signalBitmap;
-        }
+            ModelRbfImage.Source = modelRbfBitmap;
 
+            // switch visibility of the bitmaps
+            RenderBttsStack_Switch(ShowVoxsButton, false);
+
+            // Set threads
+            TPSlines = new TasksDispenser(_pH);
+        }
+        
         private void IniGrid()
         {
-            // Set grid params
-            int numX = rootGridShape[0];
-            int numY = rootGridShape[1];
-            
-            double[,] shape = new double[2, 3]
+            if (voxelizer == null)
             {
-                { SpaceDim[0], SpaceDim[2], numX },
-                { SpaceDim[1], SpaceDim[3], numY }
-            };
+                // Set grid params
+                int numX = rootGridShape[0];
+                int numY = rootGridShape[1];
 
-            adaptiveGrid = new AdaptiveGrid<double>(tessNum, shape, tessFactors);
+                double[,] shape = new double[2, 3]
+                {
+                    { SpaceDim[0], SpaceDim[2], numX },
+                    { SpaceDim[1], SpaceDim[3], numY }
+                };
+
+                adaptiveGrid = new AdaptiveGrid<double>(tessNum, shape, tessFactors);
+            }
+            else
+            {
+                adaptiveGrid = voxelizer.FeatureSpace;
+            }
+
             voxelArray = adaptiveGrid.InternalArray;
             tessMultp = adaptiveGrid.TessellationMultp;
 
             // Ini drawings
             DrawRootGrid();
         }
-
+        
         private static double Normalize(double input)
         {
             input = MathX.ClipAbs(input, 0.5, 0.5);
@@ -426,11 +707,14 @@ namespace TestWpf_RBFV
         }
 
         private Stopwatch funcTimer = new Stopwatch();
-        private long timeRefine, timeDrawGrid, timeDrawVoxs;
+        private long timeRefine, timeDrawGrid, timeDrawVoxsModel;
 
         [Flags]
-        private enum GItems { None = 0, Grid = 1, Voxels = 2, Model = 4, ModelGPU = 8, All = 15 }
-        
+        private enum GItems { None = 0, Grid = 1, Voxels = 2, Model = 4, RBF = 8, ModelRBF = 16, All = 31 }
+
+        private delegate void GUpdater(GItems gi = GItems.All);
+        private delegate void InfoUpdater();
+
         private void UpdateGI(GItems gi = GItems.All)
         {
             // ### Diagnostic
@@ -458,24 +742,50 @@ namespace TestWpf_RBFV
                 // ### Diagnostic
                 funcTimer.Restart();
 
-                DrawVoxels();
+                DrawVoxels(gain: voxelizer == null ? 1.0 : outputGain);
 
                 // ### Diagnostic
                 funcTimer.Stop();
-                timeDrawVoxs = funcTimer.ElapsedMilliseconds;
+                timeDrawVoxsModel = funcTimer.ElapsedMilliseconds;
             }
             else if (ShowModelButton.IsChecked == true && (gi & GItems.Model) == GItems.Model)
             {
                 // ### Diagnostic
                 funcTimer.Restart();
 
-                //DrawModelParallel();
+                DrawModel_Parallel();
 
                 // ### Diagnostic
                 funcTimer.Stop();
-                timeDrawVoxs = funcTimer.ElapsedMilliseconds;
+                timeDrawVoxsModel = funcTimer.ElapsedMilliseconds;
             }
-            else timeDrawVoxs = 0;
+            else if (ShowRbfButton.IsChecked == true && (gi & GItems.RBF) == GItems.RBF)
+            {
+                // ### Diagnostic
+                funcTimer.Restart();
+
+                DrawRbf_Parallel();
+
+                // ### Diagnostic
+                funcTimer.Stop();
+                timeDrawVoxsModel = funcTimer.ElapsedMilliseconds;
+            }
+            else if (ShowModelRbfButton.IsChecked == true && (gi & GItems.ModelRBF) == GItems.ModelRBF)
+            {
+                if (isModelRbfFresh) return;
+
+                // ### Diagnostic
+                funcTimer.Restart();
+
+                DrawModelRbf_Parallel();
+
+                // ### Diagnostic
+                funcTimer.Stop();
+                timeDrawVoxsModel = funcTimer.ElapsedMilliseconds;
+
+                isModelRbfFresh = true;
+            }
+            else timeDrawVoxsModel = 0;
         }
 
         private void UpdateInfo()
@@ -486,10 +796,35 @@ namespace TestWpf_RBFV
             int reserve = VArray.Count - voxels;
             int deepestLev = adaptiveGrid.LevelsNumber - 1;
 
-            // output results
+            double posP = 0.0;
+            double negP = 0.0;
+
+            if (voxelizer != null)
+            {
+                posP = 100.0 * voxelizer.PositiveNum / trainingNum;
+                negP = 100.0 * voxelizer.NegativeNum / trainingNum;
+            }
+            else
+            {
+                ErrorInTxtBlock.Text = "_ %";
+                ErrorOutTxtBlock.Text = "_ %";
+                VoxelValueTxtBlock.Text = "_ %";
+            }
+
+            if (dataSource != null)
+            {
+                posP = 100.0 * dataSource.PositiveNum / dataSource.BatchLength;
+                negP = 100.0 * dataSource.NegativeNum / dataSource.BatchLength;
+            }
+
+            // output Grid Info results
             VoxelsTxtBlock.Text = voxels.ToString("N0");
             SlotsTxtBlock.Text = reserve.ToString("N0");
             LevelsTxtBlock.Text = deepestLev.ToString("N0");
+
+            // output Performance
+            TrainingNumTxtBlock.Text = trainingNum.ToString("N0");
+            TrainingRatioTxtBlock.Text = string.Format("{0,5:F1}, {1,5:F1} %", posP, negP);
 
             //// voxel count
             //if (focusedVoxel != null)
@@ -527,6 +862,173 @@ namespace TestWpf_RBFV
             //    else ModelStepTxtBox.Text = Model.TimeStep.ToString("G8");
             //}
             //else modeldt.ToString("G8");
+        }
+
+        private void DrawModel_Parallel()
+        {
+            if (model == null) return;
+
+            int lineInd = 0;
+            int linelNum;
+
+            TPSlines.ResetDispenser();
+
+            var RelayComplete = new AutoResetEvent(false);
+            int numOut = TPSlines.ThreadsNum;
+
+            while (TPSlines.DispenseNext(out linelNum))
+            {
+                linelNum += lineInd;
+
+                var interval = new Tuple<int, int>(lineInd, linelNum);
+
+                ThreadPool.QueueUserWorkItem(new WaitCallback((o) =>
+                {
+                    var segment = (Tuple<int, int>)o;
+
+                    int rowStart = segment.Item1;
+                    int rowNum = segment.Item2;
+
+                    byte[] pixel = new byte[4];
+                    double[] point = new double[2];
+
+                    for (int row = rowStart; row < rowNum; row++)
+                    {
+                        int start = row * rowStride;
+                        int stop = start + rowStride;
+
+                        for (int i = start, clm = 0; i < stop; i += BYTESPP, clm++)
+                        {
+                            point[0] = clm;
+                            point[1] = row;
+                            PointToModel(point);
+
+                            SetPixelBgra(pixel, model.Measure(point));
+
+                            Buffer.BlockCopy(pixel, 0, modelPixelArray, i, BYTESPP);
+                        }
+                    }
+
+                    if (Interlocked.Decrement(ref numOut) == 0) RelayComplete.Set();
+                }), interval);
+
+                lineInd = linelNum;
+            }
+
+            RelayComplete.WaitOne();
+
+            // write pixels to the bitmap
+            signalBitmap.WritePixels(new Int32Rect(0, 0, _pW, _pH), modelPixelArray, rowStride, 0, 0);
+        }
+
+        private void DrawModelRbf_Parallel()
+        {
+            int lineInd = 0;
+            int linelNum;
+
+            TPSlines.ResetDispenser();
+
+            var RelayComplete = new AutoResetEvent(false);
+            int numOut = TPSlines.ThreadsNum;
+
+            while (TPSlines.DispenseNext(out linelNum))
+            {
+                linelNum += lineInd;
+
+                var interval = new Tuple<int, int>(lineInd, linelNum);
+
+                ThreadPool.QueueUserWorkItem(new WaitCallback((o) =>
+                {
+                    var segment = (Tuple<int, int>)o;
+
+                    int rowStart = segment.Item1;
+                    int rowNum = segment.Item2;
+
+                    byte[] pixel = new byte[4];
+                    double[] point = new double[2];
+
+                    for (int row = rowStart; row < rowNum; row++)
+                    {
+                        int start = row * rowStride;
+                        int stop = start + rowStride;
+
+                        for (int i = start, clm = 0; i < stop; i += BYTESPP, clm++)
+                        {
+                            point[0] = clm;
+                            point[1] = row;
+                            PointToModel(point);
+
+                            SetPixelBgra(pixel, Normalize(outputGain * RBF.MeasureBalanced(point, rbfLabels, rbfPoints)));
+
+                            Buffer.BlockCopy(pixel, 0, modelPixelArray, i, BYTESPP);
+                        }
+                    }
+
+                    if (Interlocked.Decrement(ref numOut) == 0) RelayComplete.Set();
+                }), interval);
+
+                lineInd = linelNum;
+            }
+
+            RelayComplete.WaitOne();
+
+            // write pixels to the bitmap
+            modelRbfBitmap.WritePixels(new Int32Rect(0, 0, _pW, _pH), modelPixelArray, rowStride, 0, 0);
+        }
+
+        private void DrawRbf_Parallel()
+        {
+            int lineInd = 0;
+            int linelNum;
+
+            TPSlines.ResetDispenser();
+
+            var RelayComplete = new AutoResetEvent(false);
+            int numOut = TPSlines.ThreadsNum;
+
+            while (TPSlines.DispenseNext(out linelNum))
+            {
+                linelNum += lineInd;
+
+                var interval = new Tuple<int, int>(lineInd, linelNum);
+
+                ThreadPool.QueueUserWorkItem(new WaitCallback((o) =>
+                {
+                    var segment = (Tuple<int, int>)o;
+
+                    int rowStart = segment.Item1;
+                    int rowNum = segment.Item2;
+
+                    byte[] pixel = new byte[4];
+                    double[] point = new double[2];
+
+                    for (int row = rowStart; row < rowNum; row++)
+                    {
+                        int start = row * rowStride;
+                        int stop = start + rowStride;
+
+                        for (int i = start, clm = 0; i < stop; i += BYTESPP, clm++)
+                        {
+                            point[0] = clm;
+                            point[1] = row;
+                            PointToModel(point);
+
+                            SetPixelBgra(pixel, Normalize(RBF.MeasureR2(rbfCenter.SquaredDistance(point))));
+
+                            Buffer.BlockCopy(pixel, 0, modelPixelArray, i, BYTESPP);
+                        }
+                    }
+
+                    if (Interlocked.Decrement(ref numOut) == 0) RelayComplete.Set();
+                }), interval);
+
+                lineInd = linelNum;
+            }
+
+            RelayComplete.WaitOne();
+
+            // write pixels to the bitmap
+            signalBitmap.WritePixels(new Int32Rect(0, 0, _pW, _pH), modelPixelArray, rowStride, 0, 0);
         }
 
         private void DrawCells()
@@ -658,7 +1160,7 @@ namespace TestWpf_RBFV
             gridBitmap.WritePixels(new Int32Rect(0, 0, _pW, _pH), gridPixelArray, rowStride, 0, 0);
         }
 
-        private void DrawVoxels(int stopLevel = int.MaxValue)
+        private void DrawVoxels(int stopLevel = int.MaxValue, double gain = 1.0)
         {
             IVoxel ivoxel;
             int level = 0;
@@ -691,7 +1193,7 @@ namespace TestWpf_RBFV
                     if (xo + W > _pW) xo--;
                     if (yo + H > _pH) yo--;
 
-                    SetPixelBgra(pixelTmp2, Normalize(ivoxel.Data));
+                    SetPixelBgra(pixelTmp2, Normalize(gain * ivoxel.Data));
 
                     // set color line buffer
                     for (int i = 0; i < byteLength; i += BYTESPP)
@@ -720,10 +1222,9 @@ namespace TestWpf_RBFV
         {
             // --- Reset Grid ----------------------------
             int rootNum = adaptiveGrid.LevelsCounts[0];
-            var voxelArr = adaptiveGrid.InternalArray;
 
             for (int i = 0; i < rootNum; i++)
-                voxelArr[i].Merge(true);
+                voxelArray[i].Merge(true);
 
             // --- Refine Grid ---------------------------
             if (isNegative && RBF.Amplitude > 0)
@@ -736,7 +1237,8 @@ namespace TestWpf_RBFV
             while (++level < adaptiveGrid.LevelsCounts.Count)
             {
                 IVoxel voxel;
-                if (!adaptiveGrid.FirstAtLevel(level, out voxel)) continue;
+                if (!adaptiveGrid.FirstAtLevel(level, out voxel))
+                    break;
 
                 placementTmp[2] = voxel.GridStep[0];
                 placementTmp[3] = voxel.GridStep[1];
@@ -783,13 +1285,9 @@ namespace TestWpf_RBFV
         /// </summary>
         private void FillWithAverages()
         {
-            var voxelArr = adaptiveGrid.InternalArray;
-            int level = adaptiveGrid.LevelsNumber;
-            int tessNum = adaptiveGrid.TessellationMultp;
+            int level = adaptiveGrid.LevelsNumber - 1;
 
-            // to avoid start from leafs
-            --level;
-
+            // tree traversal upwards starting from the penultimate level
             while (--level >= 0)
             {
                 adaptiveGrid.FirstAtLevel(level, out IVoxel voxel);
@@ -798,34 +1296,695 @@ namespace TestWpf_RBFV
                 {
                     if (voxel.ContentSI < 0) continue;
 
-                    double avg = 0;
-                    int stop = voxel.ContentSI + tessNum;
+                    double avg = 0.0;
+                    int stop = voxel.ContentSI + tessMultp;
 
                     // calc average
                     for (int i = voxel.ContentSI; i < stop; i++)
                     {
-                        avg += voxelArr[i].Data;
+                        avg += voxelArray[i].Data;
                     }
 
-                    voxel.Data = avg / tessNum;
+                    voxel.Data = avg / tessMultp;
                 }
                 while (adaptiveGrid.NextAtLevel(ref voxel));
             }
         }
 
-        #region Interface Event Handlers
-
-        private void RenderBttsStack_Click(object sender, RoutedEventArgs e)
+        private void UpdateGrid(object sender, RBFVoxelizer.SyncEventArgs sea)
         {
-            var sourceBtt = (FrameworkElement)e.OriginalSource;
-            bool isSimActive = false; // StartStopButton.IsChecked == true;
+            trainingNum += dataSource.BatchLength;
 
+            Dispatcher.Invoke(new GUpdater(UpdateGI), GItems.All);
+            Dispatcher.Invoke(new InfoUpdater(UpdateInfo));
+
+            if (!RefineButtonIsChecked)
+            {
+                sea.StopFlag = true;
+
+                Dispatcher.Invoke(() =>
+                {
+                    RefineButtonIsChecked = false;
+                    RefineButton.IsEnabled = true;
+                    RefineButton.Content = "Refine";
+
+                    InitButton.IsEnabled = true;
+                    EvaluationStack.IsEnabled = true;
+                    DataStack.IsEnabled = true;
+
+                    batchLength = dataSource.BatchLength;
+                    BatchNumTextBox.Text = batchLength.ToString("N0");
+                });
+            }
+        }
+
+        private void CompletionHandler(object sender, EventArgs e)
+        {
+            Dispatcher.Invoke(() => 
+            {
+                RefineButtonIsChecked = false;
+                RefineButton.IsChecked = false;
+                RefineButton.IsEnabled = false;
+                RefineButton.Content = "Refine";
+
+                InitButton.IsEnabled = true;
+                EvaluationStack.IsEnabled = true;
+                DataStack.IsEnabled = true;
+
+                batchLength = dataSource.BatchLength;
+                BatchNumTextBox.Text = batchLength.ToString("N0");
+            });
+        }
+
+        //-------------------------------------------------------------------------------
+        #region GUI Event Handlers
+        //-------------------------------------------------------------------------------
+        private bool RbfAmplitudesInput()
+        {
+            string[] inputStr = RBFamplitudeTextBox.Text.Split(',');
+
+            if (inputStr.Length != 2)
+                return false;
+
+            double[] inputVal = new double[2];
+
+            for (int i = 0; i < 2; i++)
+            {
+                if (!double.TryParse(inputStr[i], out double tmp))
+                    return false;
+
+                inputVal[i] = tmp;
+            }
+
+            RBF.Amplitude = inputVal[0];
+            RBF.SetBinaryAmps(inputVal[0], inputVal[1]);
+            RBF.CalcRanges(threshold, spaceDiagonal, 1);
+
+            UpdateGI(GItems.RBF);
+
+            return true;
+        }
+
+        private void RBFamplitudeTextBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                RbfAmplitudesInput();
+
+                RBFamplitudeTextBox.Text = string.Format("{0:G6}, {1:G6}", RBF.AmplitudesArr[0], RBF.AmplitudesArr[1]);
+            }
+        }
+        private void RBFamplitudeTextBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        {
+            RbfAmplitudesInput();
+
+            RBFamplitudeTextBox.Text = string.Format("{0:G6}, {1:G6}", RBF.AmplitudesArr[0], RBF.AmplitudesArr[1]);
+        }
+
+        private void RBFfactorTextBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                if (double.TryParse(RBFfactorTextBox.Text, out double val))
+                {
+                    RBF.Factor = val;
+                    RBF.CalcRanges(threshold, spaceDiagonal, 1);
+
+                    UpdateGI(GItems.RBF);
+                }
+
+                RBFfactorTextBox.Text = RBF.Factor.ToString();
+            }
+        }
+        private void RBFfactorTextBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        {
+            if (double.TryParse(RBFfactorTextBox.Text, out double val))
+            {
+                RBF.Factor = val;
+                RBF.CalcRanges(threshold, spaceDiagonal, 1);
+
+                UpdateGI(GItems.RBF);
+            }
+
+            RBFfactorTextBox.Text = RBF.Factor.ToString();
+        }
+
+        private void RBFexponentTextBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                if (double.TryParse(RBFexponentTextBox.Text, out double val))
+                {
+                    RBF.Exponent = val;
+                    RBF.CalcRanges(threshold, spaceDiagonal, 1);
+
+                    UpdateGI(GItems.RBF);
+                }
+
+                RBFexponentTextBox.Text = RBF.Exponent.ToString();
+            }
+        }
+        private void RBFexponentTextBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        {
+            if (double.TryParse(RBFexponentTextBox.Text, out double val))
+            {
+                RBF.Exponent = val;
+                RBF.CalcRanges(threshold, spaceDiagonal, 1);
+
+                UpdateGI(GItems.RBF);
+            }
+
+            RBFexponentTextBox.Text = RBF.Exponent.ToString();
+        }
+
+        private void BatchNumTextBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                if (int.TryParse(BatchNumTextBox.Text, out int num) && num > 0 && num < 1000000)
+                {
+                    batchLength = num;
+                    GetCurrentDataBatch();
+                }
+
+                BatchNumTextBox.Text = batchLength.ToString("N0");
+            }
+        }
+        private void BatchNumTextBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        {
+            if (int.TryParse(BatchNumTextBox.Text, out int num) && num > 0 && num < 1000000)
+            {
+                batchLength = num;
+                GetCurrentDataBatch();
+            }
+
+            BatchNumTextBox.Text = batchLength.ToString("N0");
+        }
+
+        private void DataNoiseTxtBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                if (double.TryParse(DataNoiseTxtBox.Text, out double val))
+                    NoiseFactor = val;
+
+                DataNoiseTxtBox.Text = NoiseFactor.ToString();
+            }
+        }
+        private void DataNoiseTxtBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        {
+            if (double.TryParse(DataNoiseTxtBox.Text, out double val))
+                NoiseFactor = val;
+
+            DataNoiseTxtBox.Text = NoiseFactor.ToString();
+        }
+
+        private bool RootShapeInput()
+        {
+            if (voxelizer != null) return false;
+
+            string[] inputStr = RootShapeTxtBox.Text.Split(',');
+
+            if (inputStr.Length != 4) return false;
+
+            int[] inputVal = new int[4];
+            bool isEqual = true;
+
+            for (int i = 0; i < 2; i++)
+            {
+                if (!int.TryParse(inputStr[i], out int tmp) || tmp <= 0) return false;
+
+                inputVal[i] = tmp;
+
+                if (isEqual && tmp != rootGridShape[i]) isEqual = false;
+            }
+
+            for (int i = 2; i < 4; i++)
+            {
+                bool multiply = inputStr[i][0] == '*';
+                int tmp;
+
+                if (multiply)
+                {
+                    if (!int.TryParse(inputStr[i].Substring(1), out tmp) || tmp <= 0) return false;
+
+                    tmp *= inputVal[i - 2];
+                }
+                else
+                {
+                    if (!int.TryParse(inputStr[i], out tmp) || tmp <= 0) return false;
+                }
+
+                inputVal[i] = tmp;
+
+                if (isEqual && tmp != rootGridShape[i]) isEqual = false;
+            }
+
+            if (isEqual) return false;
+
+            // align the shape
+            inputVal[2] = BITMAPWF * ((inputVal[2] + BITMAPWF - 1) / BITMAPWF);
+            inputVal[3] = BITMAPHF * ((inputVal[3] + BITMAPHF - 1) / BITMAPHF);
+
+            if (inputVal[0] == rootGridShape[0] && inputVal[1] == rootGridShape[1] &&
+                inputVal[2] == rootGridShape[2] && inputVal[3] == rootGridShape[3]) return false;
+
+            if (inputVal[2] / inputVal[0] < TILEMIN || inputVal[3] / inputVal[1] < TILEMIN) return false;
+
+            // --- Reinitialize the grid and model ---
+            rootGridShape = inputVal;
+
+            SetModelToCanvasTransform(true);
+            IniBitmaps();
+            IniGrid();
+            //SetGPU();
+
+            //ResetAvg();
+            UpdateGI();
+            UpdateInfo();
+
+            //if (focusedVoxel != null) DrawFocusRect(focusedVoxel);
+
+            return true;
+        }
+
+        private bool TessShapeInput()
+        {
+            string[] inputStr = TessShapeTxtBox.Text.Split(',');
+
+            if (inputStr.Length != 2) return false;
+
+            int[] inputVal = new int[2];
+            bool isEqual = true;
+
+            for (int i = 0; i < 2; i++)
+            {
+                if (!int.TryParse(inputStr[i], out int tmp) || tmp <= 0) return false;
+
+                inputVal[i] = tmp;
+
+                if (tmp == tessFactors[i]) continue;
+
+                isEqual = false;
+            }
+
+            if (isEqual) return false;
+
+            tessFactors = inputVal;
+
+            // Reinitialize the grid
+            IniGrid();
+            //ResetAvg();
+            UpdateGI();
+            UpdateInfo();
+
+            return true;
+        }
+
+        private void RootShapeTxtBox_LostKeyFocus(object sender, RoutedEventArgs e)
+        {
+            RootShapeInput();
+            RootShapeTxtBox.Text = ArrayToString(rootGridShape);
+        }
+        private void RootShapeTxtBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                if (!RootShapeInput()) RootShapeTxtBox.Text = ArrayToString(rootGridShape);
+            }
+        }
+
+        private void TessShapeTxtBox_LostKeyFocus(object sender, RoutedEventArgs e)
+        {
+            if (!TessShapeInput()) TessShapeTxtBox.Text = ArrayToString(tessFactors);
+        }
+        private void TessShapeTxtBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                if (!TessShapeInput()) TessShapeTxtBox.Text = ArrayToString(tessFactors);
+            }
+        }
+
+        private void TessNumTxtBox_LostKeyFocus(object sender, RoutedEventArgs e)
+        {
+            if (voxelizer != null) return;
+
+            string inputStr = TessNumTxtBox.Text;
+            bool multiply = string.IsNullOrEmpty(inputStr) ? false : inputStr[0] == '*';
+
+            if (multiply) inputStr = inputStr.Substring(1);
+
+            if (int.TryParse(inputStr, out int n) && n > 0)
+            {
+                tessNum = n;
+
+                if (multiply)
+                {
+                    tessNum *= rootGridShape[0] * rootGridShape[1];
+                }
+            }
+
+            TessNumTxtBox.Text = tessNum.ToString();
+
+            // Reinitialize the grid
+            IniGrid();
+            //ResetAvg();
+            UpdateGI();
+            UpdateInfo();
+        }
+        private void TessNumTxtBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (voxelizer != null) return;
+
+            if (e.Key == Key.Enter)
+            {
+                string inputStr = TessNumTxtBox.Text;
+                bool multiply = inputStr[0] == '*';
+
+                if (multiply) inputStr = inputStr.Substring(1);
+
+                if (int.TryParse(inputStr, out int n) && n > 0)
+                {
+                    tessNum = n;
+
+                    if (multiply)
+                    {
+                        tessNum *= rootGridShape[0] * rootGridShape[1];
+                    }
+                }
+
+                TessNumTxtBox.Text = tessNum.ToString();
+
+                // Reinitialize the grid
+                IniGrid();
+                //ResetAvg();
+                UpdateGI();
+                UpdateInfo();
+            }
+        }
+
+        private void PreviewNextButton_Click(object sender, RoutedEventArgs e)
+        {
+            GetNextDataBatch();
+            isModelRbfFresh = false;
+            UpdateGI();
+            UpdateInfo();
+            
+            PreviewButton.IsEnabled = true;
+            InitButton.IsEnabled = true;
+        }
+
+        private void PreviewButton_Click(object sender, RoutedEventArgs e)
+        {
+            isModelRbfFresh = false;
+            UpdateGI();
+        }
+
+        private void ThresholdTxtBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                if (double.TryParse(ThresholdTxtBox.Text, out double h) && h > 0.0)
+                {
+                    threshold = h;
+
+                    RBF.CalcRanges(threshold, spaceDiagonal, 1);
+                }
+
+                ThresholdTxtBox.Text = threshold.ToString();
+            }
+        }
+        private void ThresholdTxtBox_LostKeyFocus(object sender, RoutedEventArgs e)
+        {
+            if (double.TryParse(ThresholdTxtBox.Text, out double h) && h > 0.0)
+            {
+                threshold = h;
+
+                RBF.CalcRanges(threshold, spaceDiagonal, 1);
+            }
+
+            ThresholdTxtBox.Text = threshold.ToString();
+        }
+
+        private void DetailsFactorTxtBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                if (double.TryParse(DetailsFactorTxtBox.Text, out double h) && h > 0.0)
+                {
+                    batchRatio = h;
+                }
+
+                DetailsFactorTxtBox.Text = batchRatio.ToString();
+            }
+        }
+        private void DetailsFactorTxtBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        {
+            if (double.TryParse(DetailsFactorTxtBox.Text, out double h) && h > 0.0)
+            {
+                batchRatio = h;
+            }
+
+            DetailsFactorTxtBox.Text = batchRatio.ToString();
+        }
+
+        private void MonotonicityTxtBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                string txt = MonotonicityTxtBox.Text;
+
+                if (double.TryParse(txt, out double h))
+                {
+                    if (h < 0.0) h = -h;
+
+                    monotonicTol = h;
+                }
+                else if (txt == "infinity" || txt == "inf")
+                {
+                    monotonicTol = double.NegativeInfinity;
+                }
+
+                if (double.IsInfinity(monotonicTol))
+                    MonotonicityTxtBox.Text = "infinity";
+                else
+                    MonotonicityTxtBox.Text = monotonicTol.ToString();
+            }
+        }
+        private void MonotonicityTxtBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        {
+            string txt = MonotonicityTxtBox.Text;
+
+            if (double.TryParse(txt, out double h))
+            {
+                if (h < 0.0) h = -h;
+
+                monotonicTol = h;
+            }
+            else if (txt == "infinity" || txt == "inf")
+            {
+                monotonicTol = double.NegativeInfinity;
+            }
+
+            if (double.IsInfinity(monotonicTol))
+                MonotonicityTxtBox.Text = "infinity";
+            else
+                MonotonicityTxtBox.Text = monotonicTol.ToString();
+        }
+
+        enum ButtonState { Reseted, InitArmed, Initialized, WaitReset, ResetTerm }
+        ButtonState initBttState = ButtonState.Reseted;
+
+        private void InitButton_Click(object sender, RoutedEventArgs e)
+        {
+            switch (initBttState)
+            {
+                case ButtonState.Reseted:
+                    initBttState = ButtonState.InitArmed;
+                    break;
+
+                case ButtonState.InitArmed:
+                    // do nothing until button will be released
+                    break;
+
+                case ButtonState.Initialized:
+                    initBttState = ButtonState.WaitReset;
+                    break;
+
+                case ButtonState.WaitReset:
+                    InitButton.Content = "Initialize";
+                    InitButton.Foreground = txtEditableFore;
+                    initBttState = ButtonState.ResetTerm;
+                    break;
+            }
+        }
+        private void InitButton_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            switch (initBttState)
+            {
+                case ButtonState.InitArmed:
+                    SetVoxelizer();
+                    IniGrid();
+
+                    InitButton.Content = "Reset";
+                    InitButton.Foreground = txtRedFore;
+
+                    PointerRect.Visibility = Visibility.Visible;
+
+                    // enable
+                    SurveyButton.IsEnabled = true;
+                    RefineButton.IsEnabled = true;
+
+                    // disable
+                    RbfStack.IsEnabled = false;
+                    //BatchNumTextBox.IsEnabled = false;
+                    //DataNoiseTxtBox.IsEnabled = false;
+                    ModelList.IsEnabled = false;
+                    RootShapeTxtBox.IsEnabled = false;
+                    TessShapeTxtBox.IsEnabled = false;
+                    TessNumTxtBox.IsEnabled = false;
+
+                    UpdateInfo();
+
+                    initBttState = ButtonState.Initialized;
+                    break;
+
+                case ButtonState.WaitReset:
+                    // early release
+                    initBttState = ButtonState.Initialized;
+
+                    if (InitButton.ToolTip == null)
+                        InitButton.ToolTip = new ToolTip() { Content = "Hold to reset" };
+
+                    break;
+
+                case ButtonState.ResetTerm:
+                    voxelizer.SyncEvent -= UpdateGrid;
+                    voxelizer.CompletionEvent -= CompletionHandler;
+                    voxelizer = null;
+
+                    trainingNum = 0;
+
+                    PointerRect.Visibility = Visibility.Collapsed;
+
+                    // enable
+                    RbfStack.IsEnabled = true;
+                    //BatchNumTextBox.IsEnabled = true;
+                    //DataNoiseTxtBox.IsEnabled = true;
+                    ModelList.IsEnabled = true;
+                    RootShapeTxtBox.IsEnabled = true;
+                    TessShapeTxtBox.IsEnabled = true;
+                    TessNumTxtBox.IsEnabled = true;
+
+                    // disable
+                    SurveyButton.IsEnabled = false;
+                    RefineButton.IsEnabled = false;
+                    EvaluationStack.IsEnabled = false;
+
+                    InitButton.ToolTip = null;
+
+                    UpdateInfo();
+
+                    initBttState = ButtonState.Reseted;
+
+                    break;
+            }
+        }
+
+        private void SurveyButton_Click(object sender, RoutedEventArgs e)
+        {
+            voxelizer.Survey(threshold, monotonicTol, batchRatio);
+            trainingNum = dataSource.BatchLength;
+
+            EvaluationStack.IsEnabled = true;
+
+            UpdateGI();
+            UpdateInfo();
+        }
+
+        private bool RefineButtonIsChecked = false;
+
+        private void RefineButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (RefineButton.IsChecked == true)
+            {
+                RefineButtonIsChecked = true;
+
+                RefineButton.Content = "Stop";
+                InitButton.IsEnabled = false;
+                SurveyButton.IsEnabled = false;
+                EvaluationStack.IsEnabled = false;
+                DataStack.IsEnabled = false;
+
+                // start the refine from the beginning of the data
+                if (!voxelizer.IsRefineStarted)
+                {
+                    dataSource.SeekNext(DataSet.Training, 0);
+                    dataSource.GetNextNorm(DataSet.Training, ref rbfPoints, ref rbfLabels);
+                    voxelizer.Survey(threshold, monotonicTol, batchRatio);
+                    trainingNum = dataSource.BatchLength;
+                }
+
+                var voxParams = Tuple.Create(threshold, batchRatio);
+
+                ThreadPool.QueueUserWorkItem(o =>
+                {
+                    var p = (Tuple<double, double>)o;
+
+                    voxelizer.Voxelize(p.Item1, p.Item2);
+
+                }, voxParams);
+            }
+            else
+            {
+                RefineButtonIsChecked = false;
+                RefineButton.IsEnabled = false;
+            }
+        }
+        
+        private void GainTextBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                if (GainTextBox.Text == "*")
+                {
+                    outputGain = 1.5 * RBF.Amplitude / batchLength;
+
+                    if (outputGain < 0) outputGain = -outputGain;
+                }
+                else if (double.TryParse(GainTextBox.Text, out double val) && val > 0.0)
+                {
+                    outputGain = val;
+                }
+
+                GainTextBox.Text = outputGain.ToString();
+            }
+        }
+        private void GainTextBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        {
+            if (GainTextBox.Text == "*")
+            {
+                outputGain = 1.5 * RBF.Amplitude / batchLength;
+
+                if (outputGain < 0) outputGain = -outputGain;
+            }
+            else if (double.TryParse(GainTextBox.Text, out double val) && val > 0.0)
+            {
+                outputGain = val;
+            }
+
+            GainTextBox.Text = outputGain.ToString();
+        }
+
+        private void RenderBttsStack_Switch(FrameworkElement sourceBtt, bool redraw)
+        {
             switch (sourceBtt.Name)
             {
                 case "ShowGridButton":
                     if (ShowGridButton.IsChecked == true)
                     {
-                        if (!isSimActive) UpdateGI(GItems.Grid);
+                        if (redraw) UpdateGI(GItems.Grid);
 
                         GridImage.Visibility = Visibility.Visible;
                     }
@@ -837,13 +1996,15 @@ namespace TestWpf_RBFV
                     if (ShowVoxsButton.IsChecked == true)
                     {
                         ShowModelButton.IsChecked = false;
-                        ShowModelGPUButton.IsChecked = false;
+                        ShowModelRbfButton.IsChecked = false;
+                        ShowRbfButton.IsChecked = false;
 
                         //LDrawGridVoxsTxtBlock.Text = "Draw grid,voxels ms:";
 
-                        if (!isSimActive) UpdateGI(GItems.Voxels);
+                        if (redraw) UpdateGI(GItems.Voxels);
 
                         ModelImage.Visibility = Visibility.Visible;
+                        ModelRbfImage.Visibility = Visibility.Collapsed;
                     }
                     else ModelImage.Visibility = Visibility.Collapsed;
 
@@ -853,31 +2014,251 @@ namespace TestWpf_RBFV
                     if (ShowModelButton.IsChecked == true)
                     {
                         ShowVoxsButton.IsChecked = false;
-                        ShowModelGPUButton.IsChecked = false;
+                        ShowModelRbfButton.IsChecked = false;
+                        ShowRbfButton.IsChecked = false;
 
                         //LDrawGridVoxsTxtBlock.Text = "Draw grid,model ms:";
 
-                        if (!isSimActive) UpdateGI(GItems.Model);
+                        if (redraw) UpdateGI(GItems.Model);
 
                         ModelImage.Visibility = Visibility.Visible;
+                        ModelRbfImage.Visibility = Visibility.Collapsed;
+                    }
+                    else ModelImage.Visibility = Visibility.Collapsed;
+
+                    break;
+
+                case "ShowModelRbfButton":
+                    if (ShowModelRbfButton.IsChecked == true)
+                    {
+                        ShowVoxsButton.IsChecked = false;
+                        ShowModelButton.IsChecked = false;
+                        ShowRbfButton.IsChecked = false;
+
+                        //LDrawGridVoxsTxtBlock.Text = "Draw grid,model ms:";
+
+                        if (redraw) UpdateGI(GItems.ModelRBF);
+
+                        ModelRbfImage.Visibility = Visibility.Visible;
+                        ModelImage.Visibility = Visibility.Collapsed;
+                    }
+                    else ModelRbfImage.Visibility = Visibility.Collapsed;
+
+                    break;
+
+                case "ShowRbfButton":
+                    if (ShowRbfButton.IsChecked == true)
+                    {
+                        ShowVoxsButton.IsChecked = false;
+                        ShowModelRbfButton.IsChecked = false;
+                        ShowModelButton.IsChecked = false;
+
+                        //LDrawGridVoxsTxtBlock.Text = "Draw grid,model ms:";
+
+                        if (redraw) UpdateGI(GItems.RBF);
+
+                        ModelImage.Visibility = Visibility.Visible;
+                        ModelRbfImage.Visibility = Visibility.Collapsed;
                     }
                     else ModelImage.Visibility = Visibility.Collapsed;
 
                     break;
             }
         }
+        
+        private void RenderBttsStack_Click(object sender, RoutedEventArgs e)
+        {
+            var sourceBtt = (FrameworkElement)e.OriginalSource;
+
+            RenderBttsStack_Switch(sourceBtt, !RefineButtonIsChecked);
+        }
+
+        private void TestNumTextBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                if (int.TryParse(TestNumTextBox.Text, out int num))
+                {
+                    testNum = num < 0 ? int.MaxValue : num;
+                }
+
+                TestNumTextBox.Text = testNum.ToString("N0");
+            }
+        }
+        private void TestNumTextBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        {
+            if (int.TryParse(TestNumTextBox.Text, out int num) && num > 0)
+            {
+                testNum = num < 0 ? int.MaxValue : num;
+            }
+
+            TestNumTextBox.Text = testNum.ToString("N0");
+        }
+
+        private void ErrorOutButton_Click(object sender, RoutedEventArgs e)
+        {
+            int errNum = 0;
+            int totNum = 0;
+
+            int tposNum = 0;
+            int tnegNum = 0;
+
+            dataSource.SeekNext(DataSet.Test, 0);
+
+            while (dataSource.GetNextNorm(DataSet.Test, ref rbfPoints, ref rbfLabels) && totNum < testNum)
+            {
+                for (int i = 0; i < rbfPoints.Length; i++)
+                {
+                    double val = voxelizer.Classify(rbfPoints[i]);
+
+                    if ((rbfLabels[i] && val <= 0.0) || (!rbfLabels[i] && val >= 0.0))
+                        ++errNum;
+                }
+
+                totNum += dataSource.BatchLength;
+                tposNum += dataSource.PositiveNum;
+                tnegNum += dataSource.NegativeNum;
+            }
+
+            if (totNum == 0)
+                ErrorOutTxtBlock.Text = "_ %";
+            else
+            {
+                ErrorOutTxtBlock.Text = string.Format("{0:F4} %", 100.0 * errNum / totNum);
+
+                double posP = 100.0 * tposNum / totNum;
+                double negP = 100.0 * tnegNum / totNum;
+
+                TestRatioTxtBlock.Text = string.Format("{0,5:F1}, {1,5:F1} %", posP, negP);
+            }
+
+            testNum = totNum;
+            batchLength = dataSource.BatchLength;
+
+            TestNumTextBox.Text = testNum.ToString("N0");
+            BatchNumTextBox.Text = batchLength.ToString("N0");
+        }
+
+        private void ErrorInButton_Click(object sender, RoutedEventArgs e)
+        {
+            int errNum = 0;
+            int totNum = 0;
+
+            dataSource.SeekNext(DataSet.Training, 0);
+
+            while (dataSource.GetNextNorm(DataSet.Training, ref rbfPoints, ref rbfLabels) && totNum < trainingNum)
+            {
+                if (model == null)
+                {
+                    for (int i = 0; i < rbfPoints.Length; i++)
+                    {
+                        double val = voxelizer.Classify(rbfPoints[i]);
+
+                        if ((rbfLabels[i] && val <= 0.0) || (!rbfLabels[i] && val >= 0.0))
+                            ++errNum;
+                    }
+                }
+                else
+                {
+                    for (int i = 0; i < rbfPoints.Length; i++)
+                    {
+                        double val = voxelizer.Classify(rbfPoints[i]);
+                        double modelVal = model.Measure(rbfPoints[i]) - 0.5;
+                        
+                        if ((val >= 0.0 && modelVal <= 0.0) || (val <= 0.0 && modelVal >= 0.0))
+                            ++errNum;
+                    }
+                }
+
+                totNum += dataSource.BatchLength;
+            }
+
+            if (totNum == 0)
+                ErrorInTxtBlock.Text = "_ %";
+            else
+                ErrorInTxtBlock.Text = string.Format("{0:F4} %", 100.0 * errNum / totNum);
+
+            batchLength = dataSource.BatchLength;
+            BatchNumTextBox.Text = batchLength.ToString("N0");
+        }
 
         private void MainCanvas_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             Point p = e.GetPosition(MainCanvas);
+            
+            if (voxelizer == null)
+            {
+                PointToModel(p, rbfCenter);
 
-            PointToModel(p, rbfCenter);
+                AddRbf(rbfCenter, true);
+                FillWithAverages();
 
-            AddRbf(rbfCenter, true);
-            FillWithAverages();
+                UpdateGI();
+                UpdateInfo();
+            }
+            else if (!RefineButtonIsChecked)
+            {
+                MainCanvas.MouseMove += MainCanvas_MouseMove;
+                MainCanvas.MouseLeftButtonUp += MainCanvas_MouseLeftButtonUp;
+                MainCanvas.MouseLeave += MainCanvas_MouseLeave;
 
-            UpdateGI();
-            UpdateInfo();
+                double[] modelP = new double[2];
+                PointToModel(p, modelP);
+
+                ModelValueTxtBlock.Text = string.Format("{0:F4} %", 100.0 * dataSource.Classify(modelP));
+                VoxelValueTxtBlock.Text = string.Format("{0:F4} %", 100.0 * voxelizer.Classify(modelP));
+
+                Canvas.SetTop(PointerRect, p.Y - 0.5 * PointerRect.Height);
+                Canvas.SetLeft(PointerRect, p.X - 0.5 * PointerRect.Width);
+            }
+        }
+        
+        private void MainCanvas_MouseMove(object sender, MouseEventArgs e)
+        {
+            Point p = e.GetPosition(MainCanvas);
+            double[] modelP = new double[2];
+
+            PointToModel(p, modelP);
+
+            ModelValueTxtBlock.Text = string.Format("{0:F4} %", 100.0 * dataSource.Classify(modelP));
+            VoxelValueTxtBlock.Text = string.Format("{0:F4} %", 100.0 * voxelizer.Classify(modelP));
+
+            Canvas.SetTop(PointerRect, p.Y - 0.5 * PointerRect.Height);
+            Canvas.SetLeft(PointerRect, p.X - 0.5 * PointerRect.Width);
+        }
+
+        private void MainCanvas_MouseLeave(object sender, MouseEventArgs e)
+        {
+            MainCanvas.MouseMove -= MainCanvas_MouseMove;
+            MainCanvas.MouseLeftButtonUp -= MainCanvas_MouseLeftButtonUp;
+        }
+
+        private void MainCanvas_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            MainCanvas.MouseMove -= MainCanvas_MouseMove;
+            MainCanvas.MouseLeftButtonUp -= MainCanvas_MouseLeftButtonUp;
+            MainCanvas.MouseLeave -= MainCanvas_MouseLeave;
+        }
+        
+        #endregion
+
+        // --------------------------------------------
+        #region Helpers and extensions
+        // --------------------------------------------
+
+        public static string ArrayToString<T>(T[] array, char separator = ',')
+        {
+            int endex = array.Length - 1;
+            StringBuilder strBld = new StringBuilder(array.Length + endex);
+
+            for (int i = 0; i < endex; i++)
+            {
+                strBld.AppendFormat("{0}{1}", array[i].ToString(), separator);
+            }
+
+            strBld.Append(array[endex].ToString());
+
+            return strBld.ToString();
         }
 
         #endregion

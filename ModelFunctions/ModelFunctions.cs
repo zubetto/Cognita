@@ -1,5 +1,8 @@
 ﻿using System;
+using System.Linq;
 using System.Windows;
+using Cognita;
+using Cognita.SupervisedLearning;
 using IVoxel = Cognita.AdaptiveGrid<double>.IVoxel;
 using Alea;
 using Alea.CSharp;
@@ -8,48 +11,6 @@ using System.Windows.Media;
 
 namespace ModelFunctions
 {
-    public static class MathX
-    {
-        public static readonly double sqrt2 = Math.Sqrt(2);
-
-        /// <summary>
-        /// Performs clipping by means of the quadratic Bezier curve
-        /// </summary>
-        /// <param name="input"></param>
-        /// <param name="threshold"></param>
-        /// <param name="kinkRadius"></param>
-        /// <returns></returns>
-        public static double Clip(double input, double threshold, double kinkRadius)
-        {
-            if (kinkRadius == 0)
-            {
-                if (input > threshold) return threshold;
-                else return input;
-            }
-
-            if (kinkRadius < 0) kinkRadius = -kinkRadius;
-
-            double po = threshold - kinkRadius / sqrt2;
-
-            if (input <= po) return input;
-
-            double p2x = threshold + kinkRadius;
-
-            if (input >= p2x) return threshold;
-
-            // convert input to the Bezier parameter t
-            input -= po;
-            input /= p2x - po;
-
-            double inverse = 1 - input;
-            double factor = input * threshold;
-
-            // By = (1-t)^2 * P0y + 2*(1-t)*t*P1y + t^2 * P2y
-            // P1y = P2y = threshold
-            return inverse * inverse * po + 2 * inverse * factor + input * factor;
-        }
-    }
-
     public interface IModel
     {
         double Time { get; set; }
@@ -73,6 +34,8 @@ namespace ModelFunctions
         void FreeMemory();
         void DrawFrame();
     }
+
+    #region Evolving Models
 
     /// <summary>
     /// 
@@ -3103,4 +3066,699 @@ namespace ModelFunctions
             gPxArray[++pxInd] = A;
         }
     }
+
+    #endregion
+
+
+    #region Data Models
+
+    public class Linear
+    {
+        public readonly int Dimension;
+
+        protected double[] pointO;
+        protected double[] pointB;
+        protected double[] deltaBO;
+
+        protected double[] planePo;
+        protected double[] planeNr;
+        protected double planeDo;
+
+        protected double slope;
+        
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="dim"></param>
+        /// <param name="region"></param>
+        /// <param name="lgstSlope"></param>
+        /// <param name="plane"></param>
+        public Linear(int dim, MathX.Hyperrect region, double lgstSlope = double.PositiveInfinity, MathX.Hyperplane plane = new MathX.Hyperplane())
+        {
+            Dimension = dim;
+
+            pointO = new double[dim];
+            pointB = new double[dim];
+            deltaBO = new double[dim];
+
+            int sizeDoubleVector = dim * sizeof(double);
+
+            Buffer.BlockCopy(region.PointA, 0, pointO, 0, sizeDoubleVector);
+            Buffer.BlockCopy(region.PointB, 0, pointB, 0, sizeDoubleVector);
+            pointO.VectorIncrement(pointB, deltaBO);
+
+            if (double.IsNegativeInfinity(lgstSlope))
+                lgstSlope = double.MinValue;
+            else if (double.IsPositiveInfinity(lgstSlope))
+                lgstSlope = double.MaxValue;
+            else if (double.IsNaN(lgstSlope))
+                throw new ArgumentException("NaN is not allowed for the expSlope");
+
+            slope = -lgstSlope;
+
+            if (plane.Point == null || plane.Normal == null)
+            {
+                planePo = new double[dim];
+                planeNr = new double[dim];
+
+                plane.Point = planePo;
+                plane.Normal = planeNr;
+
+                MathX.SetRandPlane(new MathX.Hyperrect() { PointA = pointO, PointB = pointB }, ref plane);
+
+                planeDo = plane.Distance;
+            }
+            else
+            {
+                Buffer.BlockCopy(plane.Point, 0, planePo, 0, sizeDoubleVector);
+                Buffer.BlockCopy(plane.Normal, 0, planeNr, 0, sizeDoubleVector);
+                planeDo = plane.Distance;
+            }
+        }
+
+        public double Signal(double[] point)
+        {
+            return planeNr.DotProduct(point) - planeDo;
+        }
+        
+        public bool Classify(double[] point)
+        {
+            double signal = planeNr.DotProduct(point) - planeDo;
+
+            signal = MathX.LogisticFunction(slope * signal);
+
+            if (signal > MathX.Rnd.NextDouble()) return true;
+            else return false;
+        }
+    }
+
+    public class LinearModel2D : Linear, IModel, IPointsSource
+    {
+        //---------------------------
+        #region IModel Implementation
+
+        #region Public Props
+        public double Time { get; set; } = 0.0;
+        public double TimeStep { get; set; } = 0.0;
+        public double Xo
+        {
+            get {return pointO[0]; }
+            set
+            {
+                pointO[0] = value;
+                pointB[0] = value + deltaBO[0];
+            }
+        }
+        public double Yo
+        {
+            get { return pointO[1]; }
+            set
+            {
+                pointO[1] = value;
+                pointB[1] = value + deltaBO[1];
+            }
+        }
+        public double RangeX
+        {
+            get { return deltaBO[0]; }
+            set
+            {
+                if (value > 0)
+                {
+                    deltaBO[0] = value;
+                    pointB[0] = pointO[0] + value;
+                }
+            }
+        }
+        public double RangeY
+        {
+            get { return deltaBO[1]; }
+            set
+            {
+                deltaBO[1] = value;
+                pointB[1] = pointO[1] + value;
+            }
+        }
+        #endregion
+
+        double IModel.Measure(double x, double y)
+        {
+            x *= planeNr[0];
+            y *= planeNr[1];
+
+            return MathX.LogisticFunction(slope * (x + y - planeDo));
+        }
+        double IModel.Measure(double[] point)
+        {
+            return MathX.LogisticFunction(slope * Signal(point));
+        }
+        double IModel.Measure(Point point) { throw new NotImplementedException(); }
+        double IModel.Measure(IVoxel voxel) { throw new NotImplementedException(); }
+        double IModel.Normalize(double input)
+        {
+            throw new NotImplementedException("Measured values are already normalized with logistic function");
+        }
+
+        void IModel.ResetSimulation() { throw new NotImplementedException(); }
+        void IModel.IncrementTime(double dt) { throw new NotImplementedException(); }
+
+        void IModel.SetDrawing(int width, int height, byte[] pixelArray, byte[] gradColorsBgra, Matrix toModelTransform)
+        {
+            throw new NotImplementedException();
+        }
+        void IModel.FreeMemory() { throw new NotImplementedException(); }
+        void IModel.DrawFrame() { throw new NotImplementedException(); }
+        #endregion
+
+
+        //----------------------------------
+        #region IPointsSource Implementation
+
+        private int batchLength;
+
+        private double[][] loadedPoints;
+        private bool[] loadedLabels;
+
+        private int posNum;
+        private int negNum;
+
+        private int loadedLength = 0;
+        private DataSet loadedData = DataSet.None;
+
+        private int[] indsTraining = new int[2] { -1, 0 };
+
+        private void FillWithRandom(int shift = 0)
+        {
+            posNum = 0;
+            negNum = 0;
+
+            for (int n = shift; n < loadedPoints.Length; n++)
+            {
+                loadedPoints[n].SetRandom(pointO, deltaBO);
+                loadedLabels[n] = Classify(loadedPoints[n]);
+                loadedPoints[n].NormalizeComponents(pointO, deltaBO);
+
+                if (loadedLabels[n])
+                    posNum++;
+                else
+                    negNum++;
+            }
+        }
+
+        int IPointsSource.Dimension { get { return base.Dimension; } }
+
+        int IPointsSource.BatchLength
+        {
+            get { return batchLength; }
+            set
+            {
+                if (value <= 0 || value == batchLength)
+                    return;
+
+                bool[] labelsTmp = new bool[value];
+                double[][] pointsTmp = new double[value][];
+
+                if (batchLength == 0)
+                {
+                    for (int i = 0; i < pointsTmp.Length; i++)
+                        pointsTmp[i] = new double[Dimension];
+                }
+                else if (value < batchLength)
+                {
+                    Buffer.BlockCopy(loadedLabels, 0, labelsTmp, 0, value * sizeof(bool));
+
+                    for (int i = 0; i < pointsTmp.Length; i++)
+                        pointsTmp[i] = loadedPoints[i];
+                }
+                else if (value > batchLength)
+                {
+                    Buffer.BlockCopy(loadedLabels, 0, labelsTmp, 0, batchLength * sizeof(bool));
+
+                    for (int i = 0; i < loadedPoints.Length; i++)
+                        pointsTmp[i] = loadedPoints[i];
+
+                    for (int i = batchLength; i < pointsTmp.Length; i++)
+                        pointsTmp[i] = new double[Dimension];
+                }
+
+                loadedLabels = labelsTmp;
+                loadedPoints = pointsTmp;
+
+                batchLength = value;
+
+                GC.Collect();
+            }
+        }
+
+        bool IPointsSource.SeekNext(DataSet set, int index)
+        {
+            switch (set)
+            {
+                case DataSet.Training:
+                    indsTraining[1] = index;
+                    return true; // it always returns true due to points can always be generated
+
+                default:
+                    return false;
+            }
+        }
+
+        int IPointsSource.GetCurrentIndex(DataSet set)
+        {
+            switch (set)
+            {
+                case DataSet.Training:
+                    return indsTraining[0];
+
+                default:
+                    return -1;
+            }
+        }
+
+        int IPointsSource.GetNextIndex(DataSet set)
+        {
+            switch (set)
+            {
+                case DataSet.Training:
+                    return indsTraining[1];
+
+                default:
+                    return 0;
+            }
+        }
+
+        int IPointsSource.PositiveNum { get { return posNum; } }
+        int IPointsSource.NegativeNum { get { return negNum; } }
+
+        bool IPointsSource.GetCurrentNorm(DataSet set, ref double[][] points, ref bool[] labels)
+        {
+            if (batchLength == 0)
+                return false;
+
+            if (set != loadedData)
+                FillWithRandom();
+            else if (batchLength > loadedLength)
+                FillWithRandom(loadedLength);
+
+            points = loadedPoints;
+            labels = loadedLabels;
+
+            loadedData = set;
+            loadedLength = batchLength;
+
+            indsTraining[1] = indsTraining[0] + batchLength;
+
+            return true;
+        }
+
+        bool IPointsSource.GetNextNorm(DataSet set, ref double[][] points, ref bool[] labels)
+        {
+            if (batchLength == 0)
+                return false;
+            
+            switch (set)
+            {
+                case DataSet.Training:
+                case DataSet.Test:
+                    FillWithRandom();
+
+                    loadedData = set;
+                    loadedLength = batchLength;
+
+                    indsTraining[0] = indsTraining[1];
+                    indsTraining[1] += batchLength;
+
+                    points = loadedPoints;
+                    labels = loadedLabels;
+
+                    return true;
+
+                default:
+                    return false;
+            }
+        }
+
+        double IPointsSource.Classify(double[] point)
+        {
+            double signal = Signal(point);
+
+            return 2.0 * MathX.LogisticFunction(slope * signal) - 1.0;
+        }
+        #endregion
+
+
+        //-------------------------------------------------------
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="region"></param>
+        /// <param name="lgstSlope"></param>
+        /// <param name="plane"></param>
+        public LinearModel2D(MathX.Hyperrect region, double lgstSlope = double.PositiveInfinity, MathX.Hyperplane plane = new MathX.Hyperplane()) : 
+                        base(2, region, lgstSlope, plane)
+        {
+            
+        }
+    }
+
+    public class Wave2D : IModel, IPointsSource
+    {
+        //---------------------------
+        #region IModel Implementation
+
+        #region Public Props
+        public double Time { get; set; } = 0.0;
+        public double TimeStep { get; set; } = 0.0;
+        public double Xo
+        {
+            get { return pointO[0]; }
+            set
+            {
+                pointO[0] = value;
+                pointB[0] = value + deltaBO[0];
+            }
+        }
+        public double Yo
+        {
+            get { return pointO[1]; }
+            set
+            {
+                pointO[1] = value;
+                pointB[1] = value + deltaBO[1];
+            }
+        }
+        public double RangeX
+        {
+            get { return deltaBO[0]; }
+            set
+            {
+                if (value > 0)
+                {
+                    deltaBO[0] = value;
+                    pointB[0] = pointO[0] + value;
+                }
+            }
+        }
+        public double RangeY
+        {
+            get { return deltaBO[1]; }
+            set
+            {
+                deltaBO[1] = value;
+                pointB[1] = pointO[1] + value;
+            }
+        }
+        #endregion
+
+        double IModel.Measure(double x, double y)
+        {
+            x -= center[0];
+            y -= center[1];
+
+            double signal = x * planeK[0] + y * planeK[1];
+            double r2 = x * x + y * y;
+            double r = Math.Sqrt(r2);
+
+            signal += Math.Cos(omega * r) / (1.0 + rCoef * r2);
+
+            return MathX.LogisticFunction(slope * signal);
+        }
+        double IModel.Measure(double[] point)
+        {
+            return MathX.LogisticFunction(slope * Signal(point));
+        }
+        double IModel.Measure(Point point) { throw new NotImplementedException(); }
+        double IModel.Measure(IVoxel voxel) { throw new NotImplementedException(); }
+        double IModel.Normalize(double input)
+        {
+            throw new NotImplementedException("Measured values are already normalized with logistic function");
+        }
+
+        void IModel.ResetSimulation() { throw new NotImplementedException(); }
+        void IModel.IncrementTime(double dt) { throw new NotImplementedException(); }
+
+        void IModel.SetDrawing(int width, int height, byte[] pixelArray, byte[] gradColorsBgra, Matrix toModelTransform)
+        {
+            throw new NotImplementedException();
+        }
+        void IModel.FreeMemory() { throw new NotImplementedException(); }
+        void IModel.DrawFrame() { throw new NotImplementedException(); }
+        #endregion
+
+
+        //----------------------------------
+        #region IPointsSource Implementation
+
+        private const int dimension = 2;
+        private int batchLength;
+
+        private double[][] loadedPoints;
+        private bool[] loadedLabels;
+
+        private int posNum;
+        private int negNum;
+
+        private int loadedLength = 0;
+        private DataSet loadedData = DataSet.None;
+
+        private int[] indsTraining = new int[2] { -1, 0 };
+
+        private void FillWithRandom(int shift = 0)
+        {
+            posNum = 0;
+            negNum = 0;
+
+            for (int n = shift; n < loadedPoints.Length; n++)
+            {
+                loadedPoints[n].SetRandom(pointO, deltaBO);
+                loadedLabels[n] = Classify(loadedPoints[n]);
+                loadedPoints[n].NormalizeComponents(pointO, deltaBO);
+
+                if (loadedLabels[n])
+                    posNum++;
+                else
+                    negNum++;
+            }
+        }
+
+        int IPointsSource.Dimension { get { return dimension; } }
+
+        int IPointsSource.BatchLength
+        {
+            get { return batchLength; }
+            set
+            {
+                if (value <= 0 || value == batchLength)
+                    return;
+
+                bool[] labelsTmp = new bool[value];
+                double[][] pointsTmp = new double[value][];
+
+                if (batchLength == 0)
+                {
+                    for (int i = 0; i < pointsTmp.Length; i++)
+                        pointsTmp[i] = new double[dimension];
+                }
+                else if (value < batchLength)
+                {
+                    Buffer.BlockCopy(loadedLabels, 0, labelsTmp, 0, value * sizeof(bool));
+
+                    for (int i = 0; i < pointsTmp.Length; i++)
+                        pointsTmp[i] = loadedPoints[i];
+                }
+                else if (value > batchLength)
+                {
+                    Buffer.BlockCopy(loadedLabels, 0, labelsTmp, 0, batchLength * sizeof(bool));
+
+                    for (int i = 0; i < loadedPoints.Length; i++)
+                        pointsTmp[i] = loadedPoints[i];
+
+                    for (int i = batchLength; i < pointsTmp.Length; i++)
+                        pointsTmp[i] = new double[dimension];
+                }
+
+                loadedLabels = labelsTmp;
+                loadedPoints = pointsTmp;
+
+                batchLength = value;
+
+                GC.Collect();
+            }
+        }
+
+        bool IPointsSource.SeekNext(DataSet set, int index)
+        {
+            switch (set)
+            {
+                case DataSet.Training:
+                    indsTraining[1] = index;
+                    return true; // it always returns true due to points can always be generated
+
+                default:
+                    return false;
+            }
+        }
+
+        int IPointsSource.GetCurrentIndex(DataSet set)
+        {
+            switch (set)
+            {
+                case DataSet.Training:
+                    return indsTraining[0];
+
+                default:
+                    return -1;
+            }
+        }
+
+        int IPointsSource.GetNextIndex(DataSet set)
+        {
+            switch (set)
+            {
+                case DataSet.Training:
+                    return indsTraining[1];
+
+                default:
+                    return 0;
+            }
+        }
+
+        int IPointsSource.PositiveNum { get { return posNum; } }
+        int IPointsSource.NegativeNum { get { return negNum; } }
+
+        bool IPointsSource.GetCurrentNorm(DataSet set, ref double[][] points, ref bool[] labels)
+        {
+            if (batchLength == 0)
+                return false;
+
+            if (set != loadedData)
+                FillWithRandom();
+            else if (batchLength > loadedLength)
+                FillWithRandom(loadedLength);
+
+            points = loadedPoints;
+            labels = loadedLabels;
+
+            loadedData = set;
+            loadedLength = batchLength;
+
+            indsTraining[1] = indsTraining[0] + batchLength;
+
+            return true;
+        }
+
+        bool IPointsSource.GetNextNorm(DataSet set, ref double[][] points, ref bool[] labels)
+        {
+            if (batchLength == 0)
+                return false;
+
+            switch (set)
+            {
+                case DataSet.Training:
+                case DataSet.Test:
+                    FillWithRandom();
+
+                    loadedData = set;
+                    loadedLength = batchLength;
+
+                    indsTraining[0] = indsTraining[1];
+                    indsTraining[1] += batchLength;
+
+                    points = loadedPoints;
+                    labels = loadedLabels;
+
+                    return true;
+
+                default:
+                    return false;
+            }
+        }
+
+        double IPointsSource.Classify(double[] point)
+        {
+            double signal = Signal(point);
+
+            return 2.0 * MathX.LogisticFunction(slope * signal) - 1.0;
+        }
+        #endregion
+
+
+        //-------------------------------------------------------
+        private double[] pointO;
+        private double[] pointB;
+        private double[] deltaBO;
+        private double[] center;
+        private double[] planeK;
+
+        private readonly double omega;
+        private readonly double rCoef;
+
+        private double slope;
+
+        private double Signal(double[] point)
+        {
+            double[] tmp = new double[dimension];
+
+            point.Subtract(center, tmp);
+            
+            double r2 = tmp.SquaredNorm();
+            double r = Math.Sqrt(r2);
+
+            return tmp.DotProduct(planeK) + Math.Cos(omega * r) / (1.0 + rCoef * r2);
+        }
+
+        public bool Classify(double[] point)
+        {
+            double signal = Signal(point);
+
+            signal = MathX.LogisticFunction(slope * signal);
+
+            if (signal > MathX.Rnd.NextDouble()) return true;
+            else return false;
+        }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="region"></param>
+        /// <param name="lgstSlope"></param>
+        /// <param name="plane"></param>
+        public Wave2D(MathX.Hyperrect region, double lgstSlope = double.PositiveInfinity, double frequency = 4.66)
+        {
+            pointO = new double[dimension];
+            pointB = new double[dimension];
+            deltaBO = new double[dimension];
+            center = new double[dimension];
+            
+            int sizeDoubleVector = dimension * sizeof(double);
+
+            Buffer.BlockCopy(region.PointA, 0, pointO, 0, sizeDoubleVector);
+            Buffer.BlockCopy(region.PointB, 0, pointB, 0, sizeDoubleVector);
+            Buffer.BlockCopy(region.PointA, 0, center, 0, sizeDoubleVector);
+
+            pointO.VectorIncrement(pointB, deltaBO);
+
+            center.Add(pointB);
+            center.Multiply(0.5);
+
+            if (double.IsNegativeInfinity(lgstSlope))
+                lgstSlope = double.MinValue;
+            else if (double.IsPositiveInfinity(lgstSlope))
+                lgstSlope = double.MaxValue;
+            else if (double.IsNaN(lgstSlope))
+                throw new ArgumentException("NaN is not allowed for the expSlope");
+
+            slope = -lgstSlope;
+
+            omega = frequency * Math.PI;
+            rCoef = 4.0 + 96.0 * MathX.Rnd.NextDouble();
+
+            planeK = new double[2];
+            planeK[0] = -2.0 + 4.0 * MathX.Rnd.NextDouble();
+            planeK[1] = -2.0 + 4.0 * MathX.Rnd.NextDouble();
+        }
+    }
+    
+    #endregion
 }

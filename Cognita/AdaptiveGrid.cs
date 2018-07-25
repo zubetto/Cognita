@@ -86,6 +86,12 @@ namespace Cognita
             void GetCenter(double[] point);
 
             /// <summary>
+            /// Calculates coordinates of the center of the first direct child
+            /// </summary>
+            /// <param name="point">The array into which vector increment will be placed</param>
+            void GetFirstCenter(double[] point);
+
+            /// <summary>
             /// Copies the coords of the origin of this voxel to the given "point" array
             /// starting at the given offset; O(1)
             /// </summary>
@@ -115,7 +121,7 @@ namespace Cognita
             T Data { get; set; }
 
             /// <summary>
-            /// Returns true only if this voxel was successfully tessellated;
+            /// Returns true only if this voxel has been successfully tessellated;
             /// Any voxel can be tessellated only if it is active and it has not been already
             /// tessellated and there are sufficient number of inactive voxels in the internal array;
             /// Thread-safe
@@ -127,6 +133,33 @@ namespace Cognita
             bool Tessellate(bool mandatorily, Func <IVoxel, T> initializer = null, T iniValue = default(T));
 
             /// <summary>
+            /// Returns true only if this voxel has been successfully tessellated;
+            /// Any voxel can be tessellated only if it is active and it has not been already
+            /// tessellated and there are sufficient number of inactive voxels in the internal array;
+            /// First, tries to reserve slots for the tessellation, then if success, evaluates the scan;
+            /// Thread-safe
+            /// </summary>
+            /// <param name="mandatorily">If true then thread will be blocked until other threads will end up processing of this voxel</param>
+            /// <param name="scan">Tessellation is performed if the scan is evaluated to true and all other conditions are met</param>
+            /// <param name="initializer">The data of each child will be set using this method</param>
+            /// <param name="iniValue">The data of all children will get this value, only if initializer is null</param>
+            /// <returns></returns>
+            bool Tessellate(bool mandatorily, Predicate<IVoxel> scan, Func<IVoxel, T> initializer, T iniValue = default(T));
+
+            /// <summary>
+            /// Returns true only if this voxel has been successfully tessellated;
+            /// Any voxel can be tessellated only if it is active and it has not been already
+            /// tessellated and there are sufficient number of inactive voxels in the internal array;
+            /// First, tries to reserve slots for the tessellation, then if success, evaluates the scan;
+            /// This method is useful if the scan is responsible for the children data;
+            /// Thread-safe
+            /// </summary>
+            /// <param name="mandatorily">If true then thread will be blocked until other threads will end up processing of this voxel</param>
+            /// <param name="scan">Tessellation is performed if the predicate is true and all other conditions are met</param>
+            /// <returns></returns>
+            bool Tessellate(bool mandatorily, Predicate<IVoxel> scan);
+
+            /// <summary>
             /// Eliminates information about the content of this voxel
             /// by non-recursive traversal of the whole voxel subtree;
             /// All voxels of the subtree will be set as inactive; Thread-safe 
@@ -136,6 +169,15 @@ namespace Cognita
             /// <param name="iniValue">The data of this voxel will get this value, only if initializer is null</param>
             /// <returns></returns>
             bool Merge(bool mandatorily, Func<IVoxel, T> initializer = null, T iniValue = default(T));
+
+            /// <summary>
+            /// Eliminates information about the content of this voxel
+            /// by non-recursive traversal of the whole voxel subtree;
+            /// All voxels of the subtree will be set as inactive; Thread-safe 
+            /// </summary>
+            /// <param name="mandatorily">If true then thread will be blocked until other threads will end up processing of this voxel</param>
+            /// <returns></returns>
+            bool Merge(bool mandatorily);
 
             /// <summary>
             /// Eliminates information about the content of this voxel
@@ -157,6 +199,26 @@ namespace Cognita
             /// <param name="iniValue">The data of all children will get this value, only if initializer is null</param>
             /// <returns></returns>
             bool SetContent(bool mandatorily, Func<IVoxel, T> initializer = null, T iniValue = default(T));
+
+            /// <summary>
+            /// Performs traversal of the point over the origins of direct childs of this voxel;
+            /// after passing the last child voxel the point is positioned 
+            /// at the origin of this voxel, index is reset to zero and function returns false
+            /// </summary>
+            /// <param name="index">Current index-vector; will be incremented</param>
+            /// <param name="point">Current child voxel origin; will be shifted by the grid step of this voxel</param>
+            /// <returns></returns>
+            bool NextOrigin(int[] index, double[] point);
+
+            /// <summary>
+            /// Performs traversal of the point over the centers of direct childs of the given voxel;
+            /// after passing the last child voxel the point is positioned at the center
+            /// of the first child of this voxel, index is reset to zero and function returns false
+            /// </summary>
+            /// <param name="index">Current index-vector; will be incremented</param>
+            /// <param name="point">Current child voxel center; will be shifted by the grid step of this voxel</param>
+            /// <returns></returns>
+            bool NextCenter(int[] index, double[] point);
         }
 
         private class Voxel : IVoxel
@@ -192,10 +254,20 @@ namespace Cognita
 
             public void GetCenter(double[] point)
             {
-                for (int i = 0; i < gridOrigin.Length; i++)
-                {
-                    point[i] = gridOrigin[i] + 0.5 * root.scaledSteps[Level][i];
-                }
+                Buffer.BlockCopy(root.scaledSteps[Level], 0, point, 0, root.VectorSize);
+
+                point.MultiplyAndAdd(0.5, gridOrigin);
+            }
+            
+            public void GetFirstCenter(double[] point)
+            {
+                int LPlus = Level + 1;
+
+                root.AddGridStep(LPlus);
+
+                Buffer.BlockCopy(root.scaledSteps[LPlus], 0, point, 0, root.VectorSize);
+                
+                point.MultiplyAndAdd(0.5, gridOrigin);
             }
 
             public void CopyOrigin(double[] point, int offset = 0) => 
@@ -313,7 +385,7 @@ namespace Cognita
             }
 
             /// <summary>
-            /// Returns true only if this voxel was successfully tessellated
+            /// Returns true only if this voxel has been successfully tessellated
             /// </summary>
             /// <param name="mandatorily">If true then thread will be blocked until other threads will end up processing of this voxel</param>
             /// <param name="initializer">If null, then the iniValue will be used to initiate data of new voxels</param>
@@ -371,7 +443,158 @@ namespace Cognita
 
                         voxel.Data = initializer == null ? iniValue : initializer(voxel);
 
-                        NextPoint(index, Oi, nextLevel);
+                        NextOrigin(index, Oi, nextLevel);
+                    }
+
+                    return true;
+                }
+                finally
+                {
+                    Monitor.Exit(locker);
+                }
+            }
+
+            /// <summary>
+            /// Returns true only if this voxel has been successfully tessellated
+            /// </summary>
+            /// <param name="mandatorily">If true then thread will be blocked until other threads will end up processing of this voxel</param>
+            /// <param name="scan">Tessellation is performed if the predicate is true and all other conditions are met</param>
+            /// <param name="initializer">If null, then the iniValue will be used to initiate data of new voxels</param>
+            /// <param name="iniValue"></param>
+            /// <returns></returns>
+            public bool Tessellate(bool mandatorily, Predicate<IVoxel> scan, Func<IVoxel, T> initializer, T iniValue = default(T))
+            {
+                if (mandatorily) Monitor.Enter(locker);
+                else
+                {
+                    // The checking of the state in advance gives tangible performance increase...
+                    if (state == root.ProcessedState || !Monitor.TryEnter(locker)) return false;
+
+                    // ...but in very rare cases it is possible that some thread will pass through
+                    // the above check after another one has already set the state to processed, 
+                    // completed the loop below and unlocked this voxel
+                    if (state == root.ProcessedState)
+                    {
+                        Monitor.Exit(locker);
+                        return false;
+                    }
+                    else state = root.ProcessedState;
+                }
+
+                try
+                {
+                    if (isFree || contentSI > 0 || !root.GetSerial(ref contentSI))
+                        return false;
+
+                    if (!scan(this))
+                    {
+                        root.ReleaseSerial(ref contentSI);
+                        return false;
+                    }
+
+                    int dims = root.Dimension;
+                    int nextLevel = Level + 1;
+
+                    // check availability of step vector for the next level
+                    root.AddScaledStep(nextLevel);
+
+                    // initialize internal voxels
+                    int[] index = new int[dims];
+                    double[] Oi = new double[dims];
+
+                    Buffer.BlockCopy(gridOrigin, 0, Oi, 0, root.VectorSize);
+
+                    Voxel voxel;
+
+                    for (int serial = contentSI, length = contentSI + root.tessMultp; serial < length; serial++)
+                    {
+                        voxel = root.VStorage[serial];
+
+                        voxel.Level = nextLevel;
+                        voxel.ancestor = this;
+                        voxel.isFree = false;
+                        voxel.state = !root.ProcessedState;
+                        voxel.contentSI = -1;
+
+                        Buffer.BlockCopy(Oi, 0, voxel.gridOrigin, 0, root.VectorSize);
+
+                        voxel.Data = initializer == null ? iniValue : initializer(voxel);
+
+                        NextOrigin(index, Oi, nextLevel);
+                    }
+
+                    return true;
+                }
+                finally
+                {
+                    Monitor.Exit(locker);
+                }
+            }
+
+            /// <summary>
+            /// Returns true only if this voxel has been successfully tessellated;
+            /// this method is useful if the scan is responsible for the new voxels data
+            /// </summary>
+            /// <param name="mandatorily">If true then thread will be blocked until other threads will end up processing of this voxel</param>
+            /// <param name="scan">Tessellation is performed if the predicate is true and all other conditions are met</param>
+            /// <returns></returns>
+            public bool Tessellate(bool mandatorily, Predicate<IVoxel> scan)
+            {
+                if (mandatorily) Monitor.Enter(locker);
+                else
+                {
+                    // The checking of the state in advance gives tangible performance increase...
+                    if (state == root.ProcessedState || !Monitor.TryEnter(locker)) return false;
+
+                    // ...but in very rare cases it is possible that some thread will pass through
+                    // the above check after another one has already set the state to processed, 
+                    // completed the loop below and unlocked this voxel
+                    if (state == root.ProcessedState)
+                    {
+                        Monitor.Exit(locker);
+                        return false;
+                    }
+                    else state = root.ProcessedState;
+                }
+
+                try
+                {
+                    if (isFree || contentSI > 0 || !root.GetSerial(ref contentSI))
+                        return false;
+
+                    if (!scan(this))
+                    {
+                        root.ReleaseSerial(ref contentSI);
+                        return false;
+                    }
+
+                    int dims = root.Dimension;
+                    int nextLevel = Level + 1;
+
+                    // check availability of step vector for the next level
+                    root.AddScaledStep(nextLevel);
+
+                    // initialize internal voxels
+                    int[] index = new int[dims];
+                    double[] Oi = new double[dims];
+
+                    Buffer.BlockCopy(gridOrigin, 0, Oi, 0, root.VectorSize);
+
+                    Voxel voxel;
+
+                    for (int serial = contentSI, length = contentSI + root.tessMultp; serial < length; serial++)
+                    {
+                        voxel = root.VStorage[serial];
+
+                        voxel.Level = nextLevel;
+                        voxel.ancestor = this;
+                        voxel.isFree = false;
+                        voxel.state = !root.ProcessedState;
+                        voxel.contentSI = -1;
+
+                        Buffer.BlockCopy(Oi, 0, voxel.gridOrigin, 0, root.VectorSize);
+
+                        NextOrigin(index, Oi, nextLevel);
                     }
 
                     return true;
@@ -390,7 +613,7 @@ namespace Cognita
             /// <param name="initializer">If null, then the iniValue will be used to set data of this voxel</param>
             /// <param name="iniValue"></param>
             /// <returns></returns>
-            public bool Merge(bool mandatorily, Func<IVoxel, T> initializer = null, T iniValue = default(T))
+            public bool Merge(bool mandatorily, Func<IVoxel, T> initializer, T iniValue = default(T))
             {
                 if (mandatorily) Monitor.Enter(locker);
                 else
@@ -459,7 +682,7 @@ namespace Cognita
                             int serial = childV.SI + 1;
                             int S0 = parentV.contentSI;
 
-                            if (serial - S0 < root.tessMultp)
+                            if (serial - parentV.contentSI < root.tessMultp)
                             {
                                 childV = root.VStorage[serial];
                                 goUp = false;
@@ -468,10 +691,9 @@ namespace Cognita
                             }
                             else // there are no more voxels at current level
                             {
-                                root.ReleaseSerial(S0);
+                                root.ReleaseSerial(ref parentV.contentSI);
                                 root.DecreaseLevelCount(childV.Level);
-
-                                parentV.contentSI = -1;
+                                
                                 if (parentV != this) parentV.isFree = true;
 
                                 // emerge to upper level
@@ -485,6 +707,114 @@ namespace Cognita
 
                     Data = initializer == null ? iniValue : initializer(this);
 
+                    return true;
+                }
+                finally
+                {
+                    Monitor.Exit(locker);
+                    //if (locksBunch == null) Monitor.Exit(locker); // Deep Lock
+                    //else foreach (object L in locksBunch) Monitor.Exit(L); // Deep Lock
+                }
+            }
+
+            /// <summary>
+            /// Eliminates information about the content of this voxel
+            /// by non-recursive traversal of the whole voxel subtree
+            /// </summary>
+            /// <param name="mandatorily">If true then thread will be blocked until other threads will end up processing of this voxel</param>
+            /// <returns></returns>
+            public bool Merge(bool mandatorily)
+            {
+                if (mandatorily) Monitor.Enter(locker);
+                else
+                {
+                    // The checking of the state in advance gives tangible performance increase...
+                    if (state == root.ProcessedState || !Monitor.TryEnter(locker)) return false;
+
+                    // ...but in very rare cases it is possible that some thread will pass through
+                    // the above check after another one has already set the state to processed, 
+                    // completed the loop below and unlocked this voxel
+                    if (state == root.ProcessedState)
+                    {
+                        Monitor.Exit(locker);
+                        return false;
+                    }
+                    else state = root.ProcessedState;
+                }
+
+                //Stack<object> locksBunch = null; // Deep Lock
+
+                try
+                {
+                    ////### Debug:Voxel.state
+                    //if (state != root.ProcessedState) root.errNum++;
+                    //else root.wellNum++;
+
+                    if (isFree || contentSI <= 0) return false;
+
+                    //locksBunch = new Stack<object>(root.scaledSteps.Count - Level); // Deep Lock
+                    //locksBunch.Push(locker); // Deep Lock
+
+                    Voxel parentV = this;
+                    Voxel childV = root.VStorage[contentSI];
+                    bool goUp = false;
+
+                    // voxel-tree traversal loop
+                    while (!goUp)
+                    {
+                        //Monitor.Enter(childV.locker); // Deep Lock
+
+                        if (childV.isFree)
+                        {
+                            //Monitor.Exit(childV.locker); // Deep Lock
+                        }
+                        else if (childV.contentSI <= 0)
+                        {
+                            childV.isFree = true;
+                            childV.ancestor = null;
+
+                            //Monitor.Exit(childV.locker); // Deep Lock
+                        }
+                        else // childV has content
+                        {
+                            //locksBunch.Push(childV.locker); // Deep Lock
+
+                            parentV = childV;
+                            childV = root.VStorage[parentV.contentSI];
+
+                            continue; // dive to inner voxels
+                        }
+
+                        goUp = true;
+
+                        while (goUp && childV != this)
+                        {
+                            int serial = childV.SI + 1;
+                            int S0 = parentV.contentSI;
+
+                            if (serial - parentV.contentSI < root.tessMultp)
+                            {
+                                childV = root.VStorage[serial];
+                                goUp = false;
+
+                                break; // continue at current level
+                            }
+                            else // there are no more voxels at current level
+                            {
+                                root.ReleaseSerial(ref parentV.contentSI);
+                                root.DecreaseLevelCount(childV.Level);
+
+                                if (parentV != this) parentV.isFree = true;
+
+                                // emerge to upper level
+                                childV = parentV;
+                                parentV = parentV.ancestor;
+
+                                //Monitor.Exit(locksBunch.Pop()); // Deep Lock
+                            }
+                        }
+                    } // end of voxel-tree traversal loop
+                    
                     return true;
                 }
                 finally
@@ -531,9 +861,8 @@ namespace Cognita
                         root.VStorage[serial].Prune_R();
                     }
 
-                    root.ReleaseSerial(contentSI);
+                    root.ReleaseSerial(ref contentSI);
                     root.DecreaseLevelCount(Level + 1);
-                    contentSI = -1;
 
                     Data = initializer == null ? iniValue : initializer(this);
 
@@ -561,9 +890,8 @@ namespace Cognita
                             root.VStorage[serial].Prune_R();
                         }
 
-                        root.ReleaseSerial(contentSI);
+                        root.ReleaseSerial(ref contentSI);
                         root.DecreaseLevelCount(Level + 1);
-                        contentSI = -1;
                     }
 
                     isFree = true;
@@ -572,7 +900,7 @@ namespace Cognita
             }
 
             /// <summary>
-            /// Performs traversal of the point over the grid of this voxel;
+            /// Performs traversal of the point over the origins of direct childs of the given voxel;
             /// after passing the last child voxel the point is positioned 
             /// at the origin of this voxel, index is reset to zero and function returns false
             /// </summary>
@@ -580,7 +908,7 @@ namespace Cognita
             /// <param name="point">Current child voxel origin; will be shifted by the grid step of this voxel</param>
             /// <param name="nextLev">The level of children of this voxel</param>
             /// <returns></returns>
-            private bool NextPoint(int[] index, double[] point, int nextLev)
+            private bool NextOrigin(int[] index, double[] point, int nextLev)
             {
                 int i = 0;
 
@@ -595,6 +923,71 @@ namespace Cognita
                     {
                         index[i] = 0;
                         point[i] = gridOrigin[i];
+
+                        i++;
+                    }
+                }
+
+                return false;
+            }
+
+            /// <summary>
+            /// Performs traversal of the point over the origins of direct childs of the given voxel;
+            /// after passing the last child voxel the point is positioned 
+            /// at the origin of this voxel, index is reset to zero and function returns false
+            /// </summary>
+            /// <param name="index">Current index-vector; will be incremented</param>
+            /// <param name="point">Current child voxel origin; will be shifted by the grid step of this voxel</param>
+            /// <returns></returns>
+            public bool NextOrigin(int[] index, double[] point)
+            {
+                int i = 0;
+                int levelPlus = Level + 1;
+
+                while (i < root.Dimension)
+                {
+                    if (++index[i] < root.tessFactors[i])
+                    {
+                        point[i] += root.scaledSteps[levelPlus][i];
+                        return true;
+                    }
+                    else
+                    {
+                        index[i] = 0;
+                        point[i] = gridOrigin[i];
+
+                        i++;
+                    }
+                }
+
+                return false;
+            }
+
+            /// <summary>
+            /// Performs traversal of the point over the centers of direct childs of the given voxel;
+            /// after passing the last child voxel the point is positioned at the center
+            /// of the first child of this voxel, index is reset to zero and function returns false
+            /// </summary>
+            /// <param name="index">Current index-vector; will be incremented</param>
+            /// <param name="point">Current child voxel center; will be shifted by the grid step of this voxel</param>
+            /// <returns></returns>
+            public bool NextCenter(int[] index, double[] point)
+            {
+                int i = 0;
+                int levelPlus = Level + 1;
+
+                while (i < root.Dimension)
+                {
+                    if (++index[i] < root.tessFactors[i])
+                    {
+                        point[i] += root.scaledSteps[levelPlus][i];
+                        return true;
+                    }
+                    else
+                    {
+                        index[i] = 0;
+                        point[i] = gridOrigin[i];
+                        point[i] += 0.5 * root.scaledSteps[levelPlus][i];
 
                         i++;
                     }
@@ -658,6 +1051,12 @@ namespace Cognita
         /// </summary>
         /// <param name="state"></param>
         public void UnifyStates(bool state) { for (int i = 0; i < VStorage.Length; i++) VStorage[i].state = state; }
+
+        /// <summary>
+        /// Sets the given state to the root voxels
+        /// </summary>
+        /// <param name="state"></param>
+        public void SetRootStates(bool state) { for (int i = 0; i < RootsNumber; i++) VStorage[i].state = state; }
 
         /// <summary>
         /// All voxels are stored in the internal array,
@@ -735,8 +1134,10 @@ namespace Cognita
             }
 
             // --- Preliminary calculations of the scaled grid steps --------------
-            if (tessDepth < 0 && RootsNumber > 1) tessDepth = 2 * tessNum / RootsNumber;
-            else tessDepth = Math.Min(tessNum, tessDepth);
+            if (tessDepth < 0)
+                tessDepth = tessNum / (2 * RootsNumber);
+            else
+                tessDepth = Math.Min(tessNum, tessDepth);
 
             scaledSteps = new List<double[]>(++tessDepth); // +1 for the root
             scaledSteps.Add(rootStep);
@@ -846,6 +1247,7 @@ namespace Cognita
 
         /// <summary>
         /// Calculates and adds the grid step at the level following the last one
+        /// at which precalculated steps are available
         /// </summary>
         public void AddGridStep()
         {
@@ -857,6 +1259,33 @@ namespace Cognita
                 for (int i = 0; i < Dimension; i++) nextStep[i] = lastStep[i] / tessFactors[i];
 
                 scaledSteps.Add(nextStep);
+            }
+        }
+
+        /// <summary>
+        /// If the given level less than or equal to the last level at which precalculated steps are available
+        /// then immediately returns true;
+        /// If the given level follows the last one, then calculates grid step at the given level and returns true;
+        /// Otherwise immediately returns false;
+        /// </summary>
+        /// <param name="level"></param>
+        public bool AddGridStep(int level)
+        {
+            lock (levelCount)
+            {
+                if (level < scaledSteps.Count)
+                    return true;
+                else if (level > scaledSteps.Count)
+                    return false;
+
+                double[] lastStep = scaledSteps[scaledSteps.Count - 1];
+                double[] nextStep = new double[Dimension];
+
+                for (int i = 0; i < Dimension; i++) nextStep[i] = lastStep[i] / tessFactors[i];
+
+                scaledSteps.Add(nextStep);
+
+                return true;
             }
         }
 
@@ -931,13 +1360,14 @@ namespace Cognita
             return false;
         }
         
-        private void ReleaseSerial(int serial)
+        private void ReleaseSerial(ref int serial)
         {
             lock (indexCache)
             {
                 if (cacheInd < cacheEndex) indexCache[++cacheInd] = serial;
 
                 VStorage[serial].isFree = true;
+                serial = -1;
                 freeNum++;
             }
         }
@@ -983,7 +1413,7 @@ namespace Cognita
         /// <param name="origin">Defines initial point of the traversal</param>
         /// <param name="level">Defines grid step to shift the point</param>
         /// <returns></returns>
-        public bool NextPoint(int[] index, double[] point, IList<double> origin, int level)
+        public bool NextOrigin(int[] index, double[] point, IList<double> origin, int level)
         {
             int i = 0;
 
@@ -998,6 +1428,39 @@ namespace Cognita
                 {
                     index[i] = 0;
                     point[i] = origin[i];
+
+                    i++;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Performs traversal of the point over the origins of direct childs of the given voxel;
+        /// after passing the last index the point is positioned 
+        /// at the given origin, index is reset to zero and function returns false
+        /// </summary>
+        /// <param name="index"></param>
+        /// <param name="point"></param>
+        /// <param name="voxel"></param>
+        /// <returns></returns>
+        public bool NextOrigin(int[] index, double[] point, IVoxel voxel)
+        {
+            int i = 0;
+            int level = voxel.TessLevel + 1;
+
+            while (i < Dimension)
+            {
+                if (++index[i] < tessFactors[i])
+                {
+                    point[i] += scaledSteps[level][i];
+                    return true;
+                }
+                else
+                {
+                    index[i] = 0;
+                    point[i] = voxel.Origin[i];
 
                     i++;
                 }
@@ -1809,6 +2272,84 @@ namespace Cognita
             GetSerialIncrements(level, Increments);
 
             return Increments;
+        }
+
+        //// The inner loop can be simplified
+        //public int[] GetDiagonalPairs(int num = -1, int start = 0)
+        //{
+        //    int diagsMax = 1 << Dimension - 1;
+
+        //    num = num > 0 && num < diagsMax ? num : diagsMax;
+
+        //    int maxInd = diagsMax - num;
+
+        //    start = start > maxInd ? maxInd : start;
+
+        //    int[] pairs = new int[2 * num];
+
+        //    for (int i = 0; i < pairs.Length; i += 2)
+        //    {
+        //        int ind1 = start;
+        //        int ind2 = ~start;
+
+        //        for (int j = 0, ip = i + 1; j < dimMultps.Length; j++)
+        //        {
+        //            int mult = dimMultps[j] * (tessFactors[j] - 1);
+
+        //            pairs[i] += (ind1 & 1) * mult;
+        //            pairs[ip] += (ind2 & 1) * mult;
+
+        //            ind1 >>= 1;
+        //            ind2 >>= 1;
+        //        }
+
+        //        ++start;
+        //    }
+
+        //    return pairs;
+        //}
+
+        /// <summary>
+        /// Returns an array of pairs of relative serial indexes of voxels 
+        /// arranged diagonally on opposite sides of the center of the ancestor;
+        /// The maximum allowed dimensionality is equal to 32
+        /// </summary>
+        /// <param name="num">The required number of diagonals</param>
+        /// <param name="start">Index of the first diagonal</param>
+        /// <returns></returns>
+        public int[] GetDiagonalPairs(int num = -1, int start = 0)
+        {
+            int diagsMax = 1 << Dimension - 1;
+
+            num = num > 0 && num < diagsMax ? num : diagsMax;
+
+            int maxInd = diagsMax - num;
+
+            start = start > maxInd ? maxInd : start;
+
+            int[] pairs = new int[2 * num];
+
+            int endex = tessMultp - 1;
+
+            for (int i = 0; i < pairs.Length; i += 2)
+            {
+                int ind = start;
+
+                for (int j = 0; j < dimMultps.Length; j++)
+                {
+                    int mult = dimMultps[j] * (tessFactors[j] - 1);
+
+                    pairs[i] += (ind & 1) * mult;
+
+                    ind >>= 1;
+                }
+
+                pairs[i + 1] = endex - pairs[i];
+
+                ++start;
+            }
+
+            return pairs;
         }
 
         ////### Debug:Voxel.state
