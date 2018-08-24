@@ -13,6 +13,7 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Shapes;
@@ -25,6 +26,44 @@ using ModelFunctions;
 
 namespace TestWpf_RBFV
 {
+    public class AnimationControl : ContentControl
+    {
+        static AnimationControl()
+        {
+            DefaultStyleKeyProperty.OverrideMetadata(typeof(AnimationControl),
+               new FrameworkPropertyMetadata(typeof(AnimationControl)));
+        }
+
+        public override void OnApplyTemplate()
+        {
+            base.OnApplyTemplate();
+        }
+
+        public static readonly RoutedEvent EnterKeyDownEvent =
+           EventManager.RegisterRoutedEvent("EnterKeyDown", RoutingStrategy.Bubble,
+           typeof(RoutedEventHandler), typeof(AnimationControl));
+
+        public event RoutedEventHandler EnterKeyDown
+        {
+            add { AddHandler(EnterKeyDownEvent, value); }
+            remove { RemoveHandler(EnterKeyDownEvent, value); }
+        }
+
+        protected virtual void RaiseEnterKeyDownEvent()
+        {
+            RoutedEventArgs args = new RoutedEventArgs(EnterKeyDownEvent);
+            RaiseEvent(args);
+        }
+
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            base.OnKeyDown(e);
+
+            if (e.Key == Key.Enter)
+                RaiseEnterKeyDownEvent();
+        }
+    }
+
     /// <summary>
     /// Interaction logic for MainWindow.xaml
     /// </summary>
