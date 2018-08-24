@@ -283,6 +283,19 @@ namespace Cognita
         }
 
         /// <summary>
+        /// Adds the vector r to this vector and stores the result in this vector
+        /// </summary>
+        /// <param name="ro"></param>
+        /// <param name="r"></param>
+        public static void Add(this int[] ro, int[] r)
+        {
+            for (int i = 0; i < ro.Length; i++)
+            {
+                ro[i] += r[i];
+            }
+        }
+
+        /// <summary>
         /// Subtracts the vector r from this vector and stores the result in this vector
         /// </summary>
         /// <param name="ro"></param>

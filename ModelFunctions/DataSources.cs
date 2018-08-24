@@ -403,40 +403,40 @@ namespace ModelFunctions
             return;
         }
 
-        public static void Write(StringBuilder line, ValueTuple<int, double[]> lineData, char delim = '|')
+        public static void Write(StringBuilder line, ValueTuple<int, double[]> LabelPoint, char delim = '|')
         {
             line.Clear();
 
-            line.Append(lineData.Item1);
+            line.Append(LabelPoint.Item1);
 
-            for (int i = 0; i < lineData.Item2.Length; ++i)
-                line.AppendFormat("{0}{1}", delim, lineData.Item2[i]);
+            for (int i = 0; i < LabelPoint.Item2.Length; ++i)
+                line.AppendFormat("{0}{1}", delim, LabelPoint.Item2[i]);
         }
 
-        public static void Write(StringBuilder line, ValueTuple<int, int[][]> lineData, char delim = '|')
+        public static void Write(StringBuilder line, ValueTuple<int, int[][]> LabelPoints, char delim = '|')
         {
             line.Clear();
 
-            line.Append(lineData.Item1);
+            line.Append(LabelPoints.Item1);
 
-            for (int i = 0; i < lineData.Item2.Length; ++i)
+            for (int i = 0; i < LabelPoints.Item2.Length; ++i)
             {
-                int[] tmp = lineData.Item2[i];
+                int[] tmp = LabelPoints.Item2[i];
 
                 for (int j = 0; j < tmp.Length; ++j)
                     line.AppendFormat("{0}{1}", delim, tmp[j]);
             }
         }
 
-        public static void Write(StringBuilder line, ValueTuple<int, double[][]> lineData, char delim = '|')
+        public static void Write(StringBuilder line, ValueTuple<int, double[][]> LabelPoints, char delim = '|')
         {
             line.Clear();
 
-            line.Append(lineData.Item1);
+            line.Append(LabelPoints.Item1);
 
-            for (int i = 0; i < lineData.Item2.Length; ++i)
+            for (int i = 0; i < LabelPoints.Item2.Length; ++i)
             {
-                double[] tmp = lineData.Item2[i];
+                double[] tmp = LabelPoints.Item2[i];
 
                 for (int j = 0; j < tmp.Length; ++j)
                     line.AppendFormat("{0}{1}", delim, tmp[j]);

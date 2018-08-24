@@ -110,7 +110,7 @@ namespace TestConsole
                 return a / (x + y + 1);
             };
 
-            int TESTnO = 10;
+            int TESTnO = 11;
 
             #region 0_Simple_2dGrid
             if (TESTnO == 0)
@@ -1569,8 +1569,8 @@ namespace TestConsole
                                     int[] ci = wi < 0.0 ? coeff[0] : coeff[1];
 
                                     bgrArr[bj] = (byte)(colorZero.B + wi * ci[0]);
-                                    bgrArr[bj + 1] = (byte)(colorZero.B + wi * ci[1]);
-                                    bgrArr[bj + 2] = (byte)(colorZero.B + wi * ci[2]);
+                                    bgrArr[bj + 1] = (byte)(colorZero.G + wi * ci[1]);
+                                    bgrArr[bj + 2] = (byte)(colorZero.R + wi * ci[2]);
                                 }
 
                                 System.Runtime.InteropServices.Marshal.Copy(bgrArr, 0, ptr, bgrArr.Length);
@@ -2811,6 +2811,476 @@ namespace TestConsole
                         SR.Close();
 
                     GC.Collect();
+                }
+            }
+            #endregion
+
+
+            #region 11_MNIST_Significant_Pixels
+            if (TESTnO == 11)
+            {
+                Console.WriteLine("******* MNIST Significant_Pixels *******\n\r");
+
+                START:
+                
+                string loadFileCsv = "";
+
+                StreamWriter SW = null;
+                StreamReader SR = null;
+                BinaryWriter BW = null;
+                BinaryReader BR = null;
+                Bitmap bmap = null;
+
+                while (!File.Exists(loadFileCsv))
+                {
+                    if (loadFileCsv != "")
+                        Console.WriteLine("Unable to open file: \"{0}\"\n\r", loadFileCsv);
+
+                    Console.Write("Open file *.csv: ");
+                    loadFileCsv = Console.ReadLine();
+                    Console.WriteLine();
+                }
+
+                Color colorPos = Color.FromArgb(255, 255, 255); //Color.FromArgb(200, 244, 66);
+                Color colorZero = Color.Black;
+
+                Color[] colorDigits = new Color[10]
+                {
+                    Color.FromArgb(255, 0, 0),
+                    Color.FromArgb(255, 128, 0),
+                    Color.FromArgb(255, 255, 0),
+                    Color.FromArgb(185, 255, 0),
+                    Color.FromArgb(0, 255, 0),
+                    Color.FromArgb(0, 255, 127),
+                    Color.FromArgb(0, 255, 255),
+                    Color.FromArgb(0, 150, 255),
+                    Color.FromArgb(0, 0, 255),
+                    Color.FromArgb(255, 0, 255)
+                };
+
+                int[] colorDeltas = new int[3] { colorPos.B - colorZero.B, colorPos.G - colorZero.G, colorPos.R - colorZero.R };
+
+                try
+                {
+                    // --- The file preview ----------------------------------------------------------
+                    Console.WriteLine("\n\r PREVIEW:\n\r");
+
+                    SR = new StreamReader(loadFileCsv);
+
+                    string line;
+                    int linesNumTrain = 0;
+                    int linesNumTest = 0;
+                    char delim = ',';
+                    bool skipFirst = true;
+
+                    while ((line = SR.ReadLine()) != null && ++linesNumTrain < 7)
+                        Console.WriteLine(line.Substring(0, Math.Min(64, line.Length)));
+
+                    while (SR.ReadLine() != null)
+                        ++linesNumTrain;
+
+                    SR.Close();
+
+                    Console.WriteLine("---------\n\rTotal lines: {0}\n\r", linesNumTrain);
+
+                    ConsoleIO.IOString("Delimiter: ", ref delim, s => s.Length == 1);
+
+                    Console.Write("Enter 'n' if the first line is NOT a header: ");
+
+                    if (Console.ReadLine() == "n")
+                        skipFirst = false;
+                    else
+                        --linesNumTrain;
+
+                    double ratio = 0.1;
+                    ConsoleIO.IONumeric("Test lines ratio [0, 1]: ", ref ratio, r => r >= 0.0 && r < 1.0);
+
+                    linesNumTest = (int)(ratio * linesNumTrain);
+                    linesNumTrain -= linesNumTest;
+                    int linesNum = linesNumTrain + linesNumTest;
+
+                    int width = 28;
+                    ConsoleIO.IONumeric("Width : ", ref width, w => w > 0);
+
+                    int height = width;
+                    ConsoleIO.IONumeric("Height: ", ref height, h => h > 0);
+
+                    int length = width * height;
+                    
+
+                    // --- Shapes accumulation -------------------------------------------------------------------------------------
+                    double[][] shapes = new double[10][];
+
+                    for (int i = 0; i < 10; ++i)
+                        shapes[i] = new double[length];
+
+                    SR = new StreamReader(loadFileCsv);
+
+                    if (skipFirst)
+                        SR.ReadLine();
+
+                    // it is assumed that the range for each pixel is [0, 255]
+                    double pxmax = 255 * linesNumTrain; 
+                    double[] point = new double[length];
+                    var lineDataRead = ValueTuple.Create(0, point, double.MinValue);
+
+                    int num = 0;
+                    bool isCanceled = false;
+                    Console.WriteLine("\n\r SHAPES ACCUMULATION >>> Press 'Esc' to cancel <<<\n\r");
+
+                    while (++num <= linesNumTrain)
+                    {
+                        line = SR.ReadLine();
+
+                        CsvConverter.Read(line, ref lineDataRead, delim);
+
+                        shapes[lineDataRead.Item1].Add(point);
+
+                        if (num == linesNumTrain)
+                        {
+                            Console.WriteLine("Lines processed: {0,12:N0}", num);
+                        }
+                        else if (num % 1000 == 0)
+                        {
+                            Console.WriteLine("Lines processed: {0,12:N0}", num);
+
+                            if (Console.KeyAvailable && Console.ReadKey(true).Key == ConsoleKey.Escape)
+                            {
+                                Console.WriteLine("\n\r CANCELED");
+                                isCanceled = true;
+                                break;
+                            }
+
+                            Console.CursorLeft = 0;
+                            --Console.CursorTop;
+                        }
+                    }
+
+                    SR.Close();
+                    Console.WriteLine("\n\r DONE\n\r");
+
+                    // shapes normalization
+                    for (int n = 0; n < 10; ++n)
+                    {
+                        double[] tmp = shapes[n];
+                        double max = tmp.Max();
+                        tmp.Multiply(1.0 / max);
+                    }
+
+                    double[] pxsense = null;
+                    int[] imaxes = null;
+
+                    if (!isCanceled)
+                    {
+                        pxsense = new double[length];
+                        imaxes = new int[length];
+                    }
+
+                    while (!isCanceled)
+                    {
+                        double senseThold = 0.05;
+                        ConsoleIO.IONumeric("Sense threshold [0, 1)    : ", ref senseThold, v => v >= 0.0 && v < 1.0);
+
+                        double senseAggro = 2.0;
+                        ConsoleIO.IONumeric("Sense agg ratio [1, +inf) : ", ref senseAggro, v => v >= 1.0);
+
+                        int directNum = 0; // the number of original pixels not subject to any modifications
+
+                        // this array stores the number of pixels in each aggregation group
+                        int[] aggGroups = new int[10];
+
+                        double senseMax = double.NegativeInfinity;
+
+                        // --- Calculation of the pixels sense ---
+                        for (int i = 0; i < pxsense.Length; ++i)
+                        {
+                            double avg = shapes[0][i];
+                            double min = avg;
+                            double max = min;
+                            int imax = 0;
+
+                            for (int n = 1; n < 10; ++n)
+                            {
+                                double pxval = shapes[n][i];
+                                avg += pxval;
+
+                                if (pxval < min)
+                                {
+                                    min = pxval;
+                                }
+                                else if (pxval > max)
+                                {
+                                    max = pxval;
+                                    imax = n;
+                                }
+                            }
+
+                            double d = max - min;
+                            pxsense[i] = d;
+
+                            if (d > senseMax)
+                                senseMax = d;
+
+                            if (d > senseThold)
+                            {
+                                avg /= 10.0;
+
+                                if ((max - avg) > senseAggro * (avg - min))
+                                {
+                                    imaxes[i] = imax;
+                                    ++aggGroups[imax];
+                                }
+                                else
+                                {
+                                    ++directNum;
+                                    imaxes[i] = -1;
+                                }
+                            }
+                            else
+                                imaxes[i] = int.MinValue;
+                        }
+
+                        pxsense.Multiply(1.0 / senseMax);
+                        
+
+                        Console.WriteLine("\n\r SAVING THE SENSE BITMAP:");
+
+                        // --- Save weights and bitmaps ---
+                        //string saveFileBin = Path.Combine(savePath, "Weights.wbin");
+
+                        //BW = new BinaryWriter(File.Open(saveFileBin, FileMode.Create));
+                        //BW.Write(width);
+                        //BW.Write(height);
+                        
+                        // --- Set bitmap ---
+                        bmap = new Bitmap(width, height, PixelFormat.Format24bppRgb);
+                        const int BPP = 3;
+                        var bdat = bmap.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly, PixelFormat.Format24bppRgb);
+                        IntPtr ptr = bdat.Scan0;
+                        int stride = Math.Abs(bdat.Stride);
+                        byte[] bgrArr = new byte[stride * bdat.Height];
+
+                        for (int i = 0, bj = 0; i < length; ++i, bj += BPP)
+                        {
+                            double pxi = pxsense[i];
+                            int ci = imaxes[i];
+
+                            if (ci < -1)
+                            {
+                                bgrArr[bj] = colorZero.B;
+                                bgrArr[bj + 1] = colorZero.G;
+                                bgrArr[bj + 2] = colorZero.R;
+                            }
+                            else if (ci < 0)
+                            {
+                                bgrArr[bj] = (byte)(colorZero.B + pxi * colorDeltas[0]);
+                                bgrArr[bj + 1] = (byte)(colorZero.G + pxi * colorDeltas[1]);
+                                bgrArr[bj + 2] = (byte)(colorZero.R + pxi * colorDeltas[2]);
+                            }
+                            else
+                            {
+                                Color color = colorDigits[ci];
+
+                                bgrArr[bj] = (byte)(colorZero.B + pxi * color.B);
+                                bgrArr[bj + 1] = (byte)(colorZero.G + pxi * color.G);
+                                bgrArr[bj + 2] = (byte)(colorZero.R + pxi * color.R);
+                            }
+                        }
+
+                        System.Runtime.InteropServices.Marshal.Copy(bgrArr, 0, ptr, bgrArr.Length);
+
+                        string dateStr = DateTime.Now.ToString("yyMMdd-HHmmss");
+                        string savePath = string.Format("{0}_pixsense-{1}-{2}-{3}",
+                                                 Path.GetFileNameWithoutExtension(loadFileCsv),
+                                                 linesNumTrain,
+                                                 width * height,
+                                                 dateStr);
+
+                        savePath = Path.Combine(Path.GetDirectoryName(loadFileCsv), savePath);
+
+                        Directory.CreateDirectory(savePath);
+
+                        string saveBitmap = string.Format("PixSense-{0}-_{1}-{2}.png",
+                                                           linesNumTrain,
+                                                           senseThold.ToString("g4").Substring(2),
+                                                           senseAggro.ToString("g4").Replace('.', '_'));
+
+                        saveBitmap = Path.Combine(savePath, saveBitmap);
+                        bmap.Save(saveBitmap, ImageFormat.Png);
+
+                        Console.WriteLine("\n\r DONE\n\r");
+
+
+                        // calc the number of new dimensions
+                        int aggNum = aggGroups.Count(b => b > 0);
+                        int dim = directNum + aggNum;
+                        
+                        Console.WriteLine("\n\rDirect: {0} | Agg.: {1} | Total: {2}\n\r", directNum, aggNum, dim);
+
+                        Console.Write("Enter 'y' to apply transformation: ");
+                        
+                        // transformation to the new space
+                        if (Console.ReadLine() == "y")
+                        {
+                            int[] aggIndMap = null; // forward mapping
+                            int[] aggIndInvMap = null; // inverse mapping
+                            int outInd = 0;
+
+                            // --- define mapping for the pixels belonging to the aggregation groups ---
+                            if (aggNum > 0)
+                            {
+                                aggIndMap = Enumerable.Repeat(-1, aggGroups.Length).ToArray(); // forward mapping
+                                aggIndInvMap = new int[aggNum]; // inverse mapping
+
+
+                                for (int i = 0; i < aggGroups.Length; ++i)
+                                {
+                                    if (aggGroups[i] != 0)
+                                    {
+                                        aggIndMap[i] = outInd;
+                                        aggIndInvMap[outInd] = i;
+                                        ++outInd;
+                                    }
+                                }
+                            }
+                            
+                            // --- define mapping for all input pixels ---
+                            outInd = aggNum;
+
+                            for (int i = 0; i < length; ++i)
+                            {
+                                ref int imax = ref imaxes[i];
+
+                                if (imax < -1)
+                                    continue;
+
+                                if (imax < 0) // direct pixels mapping
+                                {
+                                    imax = outInd;
+                                    ++outInd;
+                                }
+                                else // agg group pixels mapping
+                                {
+                                    imax = aggIndMap[imax];
+                                }
+                            }
+
+                            // --- read and apply transformation to all points -------------------------------
+                            string saveFileCsv = string.Format("{0}-{1}-{2}_{3}-{4}.csv",
+                                                           Path.GetFileNameWithoutExtension(loadFileCsv),
+                                                           linesNumTrain,
+                                                           dim,
+                                                           senseThold.ToString("g4").Substring(2),
+                                                           senseAggro.ToString("g4").Replace('.', '_'));
+
+                            saveFileCsv = Path.Combine(savePath, saveFileCsv);
+
+                            SR = new StreamReader(loadFileCsv);
+                            SW = new StreamWriter(saveFileCsv);
+
+                            if (skipFirst)
+                                SR.ReadLine();
+                            
+                            double[] trpoint = new double[dim];
+                            double[] zeroarr = new double[dim];
+                            int trsize = dim * sizeof(double);
+
+                            var lineDataWrite = ValueTuple.Create(0, trpoint);
+                            var lineBld = new StringBuilder(256);
+
+                            num = 0;
+                            isCanceled = false;
+                            Console.WriteLine("\n\r TRANSFORMATION >>> Press 'Esc' to cancel <<<\n\r");
+
+                            while (++num <= linesNum)
+                            {
+                                // READ
+                                line = SR.ReadLine();
+                                CsvConverter.Read(line, ref lineDataRead, delim);
+
+                                // --- TRANSFORM ---
+                                for (int i = 0; i < length; ++i)
+                                {
+                                    int ind = imaxes[i];
+
+                                    if (ind < 0)
+                                        continue;
+
+                                    trpoint[ind] += point[i];
+                                }
+
+                                // Normalize aggregated components
+                                for (int i = 0; i < aggNum; ++i)
+                                    trpoint[i] /= aggGroups[aggIndInvMap[i]];
+
+                                // WRITE
+                                lineDataWrite.Item1 = lineDataRead.Item1;
+                                CsvConverter.Write(lineBld, lineDataWrite);
+                                SW.WriteLine(lineBld.ToString());
+
+                                // erase trpoint
+                                Buffer.BlockCopy(zeroarr, 0, trpoint, 0, trsize);
+
+                                // Sync
+                                if (num == linesNum)
+                                {
+                                    Console.WriteLine("Lines processed: {0,12:N0}", num);
+                                }
+                                else if (num % 1000 == 0)
+                                {
+                                    Console.WriteLine("Lines processed: {0,12:N0}", num);
+
+                                    if (Console.KeyAvailable && Console.ReadKey(true).Key == ConsoleKey.Escape)
+                                    {
+                                        Console.WriteLine("\n\r CANCELED");
+                                        isCanceled = true;
+                                        break;
+                                    }
+
+                                    Console.CursorLeft = 0;
+                                    --Console.CursorTop;
+                                }
+                            }
+
+                            SR.Close();
+                            SW.Close();
+                            Console.WriteLine("\n\r DONE\n\r");
+                        }
+
+                        // --- loop exit ------------------------------------
+                        Console.Write("Enter 'x' to load another data: ");
+                        isCanceled = Console.ReadLine() == "x";
+                        Console.WriteLine("\n\r");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("\n\r!!! FAULT !!!\n\r{0}", ex.ToString());
+                }
+                finally
+                {
+                    if (SW != null)
+                        SW.Close();
+
+                    if (SR != null)
+                        SR.Close();
+
+                    if (BW != null)
+                        BW.Close();
+
+                    if (BR != null)
+                        BR.Close();
+
+                    if (bmap != null)
+                        bmap.Dispose();
+                }
+
+                Console.Write("\n\rEnter 'x' to exit: ");
+
+                if (Console.ReadLine() != "x")
+                {
+                    Console.WriteLine("----------------------------------\n\n\r");
+                    goto START;
                 }
             }
             #endregion
